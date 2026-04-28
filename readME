@@ -1,0 +1,145 @@
+Database Map
+
+users
+profiles
+profile_photos
+voice_prompts
+voice_answers
+
+match_preferences
+match_requests
+match_results
+matches
+compatibility_scores
+
+wallets
+coin_transactions
+coin_packages
+payment_orders
+processed_webhooks
+
+stage_unlocks
+conversations
+messages
+
+blocks
+reports
+admin_actions
+
+// TO BUILD IN ORDER 
+1. Auth
+2. Profile onboarding
+3. Preferences
+4. Wallet + coin ledger
+5. Rule-based matching
+6. Match results
+7. Stage unlocks
+8. Payments
+9. Chat
+10. AI explanations/reranking
+11. Admin moderation
+
+// USER SCHEMA
+id
+email
+passwordHash
+phone
+isEmailVerified
+isPhoneVerified
+status
+createdAt
+updatedAt
+
+//PROFILE SCHEMA
+userId
+firstName
+lastName
+birthDate
+gender
+originCountry
+residenceCountry
+residenceCity
+occupation
+religion
+religionImportance
+drinking
+smoking
+socialLife
+fitnessImportance
+moneyStyle
+relocationFeelings
+financialStatus
+childrenPreference
+personalCommStyle
+personalTuesdayVibe
+aboutMe
+onboardingCompleted
+
+//MatchPreference
+userId
+ageRange
+genderPreference
+locationPreference
+religionPreference
+culturePreference
+childrenPreference
+energyPreference
+communicationPreference
+tuesdayFeelPreference
+energyMatchPreference
+ambitionPreference
+faithPracticePreference
+socialLevelPreference
+lifestylePreference
+financialStabilityPreference
+financialStagePreference
+idealPartnerPreference
+voicePrompt
+
+// Wallet
+userId
+balance
+
+//CoinTransaction
+userId
+type
+amount
+reason
+metadata
+createdAt
+
+//MatchRequest
+userId
+cost
+status
+createdAt
+
+//MatchResult
+matchRequestId
+userId
+candidateUserId
+compatibilityScore
+rank
+reason
+
+//Match
+userOneId
+userTwoId
+status
+compatibilityScore
+createdAt
+
+//StageUnlock
+matchId
+userId
+stage
+cost
+unlockedAt
+
+//ConnectionRequest
+matchId
+senderId
+receiverId
+status
+message
+createdAt
