@@ -1,6 +1,8 @@
 import prisma from "../config/prisma.js";
 import * as userDb from "../user/userDbService.js";
 import * as walletDb from "../services/wallet/walletDbService.js";
+import * as onboardingDb from "../onboarding/onboardingDbService.js";
+import * as profileDb from "../profile/profileDbService.js";
 import {
   ConflictException,
   NotFoundException,
@@ -33,13 +35,14 @@ export const registerUser = async (payload) => {
 
   const passwordHash = await hashPassword(password);
 
-  const user = await prisma.$transaction(async (tx) => {
-    const createdUser = await userDb.createUser(
+  const result = await prisma.$transaction(async (tx) => {
+    const user = await userDb.createUser(
       {
         email,
         passwordHash,
         phone: phone || null,
         whatsappPhone: whatsappPhone || null,
+        onboardingStatus: "IN_PROGRESS",
         authProviders: {
           create: {
             provider: "LOCAL",
@@ -52,18 +55,34 @@ export const registerUser = async (payload) => {
 
     await walletDb.createWallet(
       {
-        userId: createdUser.id,
+        userId: user.id,
         balance: 0,
       },
       tx,
     );
 
-    return createdUser;
+    const onboarding = await onboardingDb.upsertProgress(
+      user.id,
+      {
+        currentStep: 1,
+        completedSections: ["auth"],
+        draftData: {
+          email,
+          phone: phone || null,
+          whatsappPhone: whatsappPhone || null,
+        },
+        status: "IN_PROGRESS",
+      },
+      tx,
+    );
+
+    return { user, onboarding };
   });
 
   return {
-    user: sanitizeUser(user),
-    token: signAccessToken(user),
+    user: sanitizeUser(result.user),
+    token: signAccessToken(result.user),
+    onboarding: result.onboarding,
   };
 };
 
@@ -86,9 +105,16 @@ export const loginUser = async ({ email, password }) => {
 
   await userDb.updateLastLogin(user.id);
 
+  const [onboarding, profile] = await Promise.all([
+    onboardingDb.findProgressByUserId(user.id),
+    profileDb.findProfileByUserId(user.id),
+  ]);
+
   return {
     user: sanitizeUser(user),
     token: signAccessToken(user),
+    onboarding,
+    hasProfile: Boolean(profile),
   };
 };
 
@@ -99,5 +125,14 @@ export const getCurrentUser = async (userId) => {
     throw new NotFoundException("User not found");
   }
 
-  return user;
+  const [onboarding, profile] = await Promise.all([
+    onboardingDb.findProgressByUserId(userId),
+    profileDb.findProfileByUserId(userId),
+  ]);
+
+  return {
+    user: sanitizeUser(user),
+    onboarding,
+    hasProfile: Boolean(profile),
+  };
 };

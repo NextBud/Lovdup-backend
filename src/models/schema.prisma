@@ -179,3 +179,17 @@ model OnboardingProgress {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
+
+model Media {
+  id        String   @id @default(uuid())
+  url       String
+  publicId  String
+  mimeType  String
+  size      Int
+  mediaType String
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

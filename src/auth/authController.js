@@ -22,10 +22,9 @@ export const login = asyncWrapper(async (req, res) => {
 });
 
 export const me = asyncWrapper(async (req, res) => {
-  const user = await authService.getCurrentUser(req.user.userId);
-
+  const result = await authService.getCurrentUser(req.user.userId);
   return res.status(200).json({
     success: true,
-    data: user,
+    data: result,
   });
 });
