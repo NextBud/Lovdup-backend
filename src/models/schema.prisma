@@ -8,6 +8,8 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+// ─── Enums ────────────────────────────────────────────────────────────────
+
 enum UserRole {
   USER
   ADMIN
@@ -28,45 +30,6 @@ enum AuthProviderType {
   APPLE
 }
 
-model User {
-  id           String     @id @default(uuid())
-  email        String     @unique
-  passwordHash String?
-  phone        String?    @unique
-  whatsappPhone String?
-
-  emailVerified Boolean @default(false)
-  phoneVerified Boolean @default(false)
-  verified      Boolean @default(false)
-
-  role   UserRole   @default(USER)
-  status UserStatus @default(ACTIVE)
-  onboardingProgress OnboardingProgress?
-
-  isActive    Boolean @default(true)
-  isSuspended Boolean @default(false)
-
-  pausedAt             DateTime?
-  pausedReason         String?
-  pausedAdditionalNote String?
-
-  deletedAt                DateTime?
-  permanentDeletionAt      DateTime?
-  deletedReason            String?
-  deletedAdditionalNote    String?
-
-  lastLoginAt  DateTime?
-  lastActiveAt DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  authProviders AuthProvider[]
-  sessions      AuthSession[]
-  wallet        Wallet?
-  profile       Profile?
-}
-
 enum Gender {
   WOMAN
   MAN
@@ -77,6 +40,61 @@ enum OnboardingStatus {
   NOT_STARTED
   IN_PROGRESS
   COMPLETED
+}
+
+enum MediaStatus {
+  ACTIVE
+  DELETED
+}
+
+enum MediaModerationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  FLAGGED
+}
+
+// ─── User / Auth ──────────────────────────────────────────────────────────
+
+model User {
+  id            String  @id @default(uuid())
+  email         String  @unique
+  passwordHash  String?
+  phone         String? @unique
+  whatsappPhone String?
+
+  emailVerified Boolean @default(false)
+  phoneVerified Boolean @default(false)
+  verified      Boolean @default(false)
+
+  role   UserRole   @default(USER)
+  status UserStatus @default(ACTIVE)
+
+  isActive    Boolean @default(true)
+  isSuspended Boolean @default(false)
+
+  pausedAt             DateTime?
+  pausedReason         String?
+  pausedAdditionalNote String?
+
+  deletedAt             DateTime?
+  permanentDeletionAt   DateTime?
+  deletedReason         String?
+  deletedAdditionalNote String?
+
+  lastLoginAt  DateTime?
+  lastActiveAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  authProviders      AuthProvider[]
+  sessions           AuthSession[]
+  wallet             Wallet?
+  profile            Profile?
+  onboardingProgress OnboardingProgress?
+  profilePhotos      ProfilePhoto[]
+  voiceAnswers       VoiceAnswer[]
 }
 
 model AuthProvider {
@@ -119,6 +137,8 @@ model Wallet {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+// ─── Profile ──────────────────────────────────────────────────────────────
+
 model Profile {
   id     String @id @default(uuid())
   userId String @unique
@@ -159,8 +179,12 @@ model Profile {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profilePhotos ProfilePhoto[]
+  voiceAnswers  VoiceAnswer[]
 }
+
+// ─── Onboarding Cache ─────────────────────────────────────────────────────
 
 model OnboardingProgress {
   id     String @id @default(uuid())
@@ -170,6 +194,7 @@ model OnboardingProgress {
   currentStep       Int              @default(1)
   completedSections String[]         @default([])
   draftData         Json?
+  draftVersion      Int              @default(1)
 
   startedAt   DateTime?
   completedAt DateTime?
@@ -180,16 +205,75 @@ model OnboardingProgress {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-model Media {
-  id        String   @id @default(uuid())
-  url       String
-  publicId  String
-  mimeType  String
-  size      Int
-  mediaType String
+// ─── Profile Photos ───────────────────────────────────────────────────────
+
+model ProfilePhoto {
+  id        String @id @default(uuid())
   userId    String
+  profileId String
+
+  url      String
+  publicId String
+  mimeType String
+  size     Int
+
+  position  Int
+  isPrimary Boolean @default(false)
+
+  status           MediaStatus           @default(ACTIVE)
+  moderationStatus MediaModerationStatus @default(PENDING)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, position])
+  @@index([userId])
+  @@index([profileId])
+}
+
+// ─── Voice Prompts / Answers ──────────────────────────────────────────────
+
+model VoicePrompt {
+  id       String  @id @default(uuid())
+  question String
+  category String?
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  answers VoiceAnswer[]
+}
+
+model VoiceAnswer {
+  id            String @id @default(uuid())
+  userId        String
+  profileId     String
+  voicePromptId String
+
+  url      String
+  publicId String
+  mimeType String
+  size     Int
+
+  durationSeconds Int?
+  transcript      String?
+
+  status           MediaStatus           @default(ACTIVE)
+  moderationStatus MediaModerationStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profile     Profile     @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  voicePrompt VoicePrompt @relation(fields: [voicePromptId], references: [id], onDelete: Restrict)
+
+  @@unique([profileId, voicePromptId])
+  @@index([userId])
+  @@index([profileId])
+  @@index([voicePromptId])
 }

@@ -35,3 +35,13 @@ export const completeOnboarding = asyncWrapper(async (req, res) => {
     data: result,
   });
 });
+
+export const resetOnboarding = asyncWrapper(async (req, res) => {
+  const result = await onboardingService.resetOnboarding(req.user.userId);
+
+  return res.status(200).json({
+    success: true,
+    message: "Onboarding reset successfully",
+    data: result,
+  });
+});
