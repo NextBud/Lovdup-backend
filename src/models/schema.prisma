@@ -54,6 +54,35 @@ enum MediaModerationStatus {
   FLAGGED
 }
 
+enum MatchRequestType {
+  LIKE
+  PASS
+  SUPER_LIKE
+}
+
+enum MatchRequestStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  CANCELLED
+}
+
+enum MatchStatus {
+  ACTIVE
+  UNMATCHED
+  BLOCKED
+}
+
+enum MatchResultReason {
+  COMPATIBLE
+  LOW_SCORE
+  OUTSIDE_PREFERENCE
+  ALREADY_REQUESTED
+  ALREADY_MATCHED
+  USER_INACTIVE
+}
+
 // ─── User / Auth ──────────────────────────────────────────────────────────
 
 model User {
@@ -95,6 +124,20 @@ model User {
   onboardingProgress OnboardingProgress?
   profilePhotos      ProfilePhoto[]
   voiceAnswers       VoiceAnswer[]
+
+  matchPreference MatchPreference?
+
+  sentMatchRequests     MatchRequest[] @relation("SentMatchRequests")
+  receivedMatchRequests MatchRequest[] @relation("ReceivedMatchRequests")
+
+  compatibilityAsUserA CompatibilityScore[] @relation("CompatibilityUserA")
+  compatibilityAsUserB CompatibilityScore[] @relation("CompatibilityUserB")
+
+  matchesAsUserA Match[] @relation("MatchUserA")
+  matchesAsUserB Match[] @relation("MatchUserB")
+
+  viewedMatchResults    MatchResult[] @relation("ViewerMatchResults")
+  candidateMatchResults MatchResult[] @relation("CandidateMatchResults")
 }
 
 model AuthProvider {
@@ -276,4 +319,156 @@ model VoiceAnswer {
   @@index([userId])
   @@index([profileId])
   @@index([voicePromptId])
+}
+
+// ─── Matching Preferences ─────────────────────────────────────────────────
+
+model MatchPreference {
+  id     String @id @default(uuid())
+  userId String @unique
+
+  ageRange String
+  preferredGenders Gender[]
+
+  locationPreference String
+  religionPreference String
+  culturePreference  String
+  childrenPreference String
+
+  energyDescription String
+  communicationStyle String
+  tuesdayFeeling     String
+  energyMatchStyle   String
+
+  ambitionImportance String
+  faithPractice      String
+  socialLevel        String
+  lifestylePreference String
+
+  financialStabilityPreference String
+  financialStagePreference     String
+
+  idealPartnerType String
+  matchVoicePrompt String
+
+  minCompatibilityScore Int @default(50)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─── Compatibility Scores ─────────────────────────────────────────────────
+
+model CompatibilityScore {
+  id String @id @default(uuid())
+
+  userAId String
+  userBId String
+
+  score Int
+
+  profileScore   Int @default(0)
+  lifestyleScore Int @default(0)
+  valuesScore    Int @default(0)
+  locationScore  Int @default(0)
+
+  reasons Json?
+
+  calculatedAt DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  userA User @relation("CompatibilityUserA", fields: [userAId], references: [id], onDelete: Cascade)
+  userB User @relation("CompatibilityUserB", fields: [userBId], references: [id], onDelete: Cascade)
+
+  matchResults MatchResult[]
+
+  @@unique([userAId, userBId])
+  @@index([userAId])
+  @@index([userBId])
+  @@index([score])
+}
+
+// ─── Match Requests ───────────────────────────────────────────────────────
+
+model MatchRequest {
+  id String @id @default(uuid())
+
+  senderId   String
+  receiverId String
+
+  type   MatchRequestType   @default(LIKE)
+  status MatchRequestStatus @default(PENDING)
+
+  message String?
+
+  respondedAt DateTime?
+  expiresAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sender   User @relation("SentMatchRequests", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User @relation("ReceivedMatchRequests", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@unique([senderId, receiverId])
+  @@index([senderId])
+  @@index([receiverId])
+  @@index([status])
+  @@index([type])
+}
+
+// ─── Matches ──────────────────────────────────────────────────────────────
+
+model Match {
+  id String @id @default(uuid())
+
+  userAId String
+  userBId String
+
+  status MatchStatus @default(ACTIVE)
+
+  matchedAt   DateTime @default(now())
+  unmatchedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userA User @relation("MatchUserA", fields: [userAId], references: [id], onDelete: Cascade)
+  userB User @relation("MatchUserB", fields: [userBId], references: [id], onDelete: Cascade)
+
+  @@unique([userAId, userBId])
+  @@index([userAId])
+  @@index([userBId])
+  @@index([status])
+}
+
+// ─── Match Results / Discovery History ────────────────────────────────────
+
+model MatchResult {
+  id String @id @default(uuid())
+
+  viewerId    String
+  candidateId String
+
+  compatibilityScoreId String?
+
+  score  Int?
+  reason MatchResultReason
+
+  shownAt   DateTime @default(now())
+  actedAt   DateTime?
+  dismissed Boolean  @default(false)
+
+  viewer    User @relation("ViewerMatchResults", fields: [viewerId], references: [id], onDelete: Cascade)
+  candidate User @relation("CandidateMatchResults", fields: [candidateId], references: [id], onDelete: Cascade)
+
+  compatibilityScore CompatibilityScore? @relation(fields: [compatibilityScoreId], references: [id], onDelete: SetNull)
+
+  @@unique([viewerId, candidateId])
+  @@index([viewerId])
+  @@index([candidateId])
+  @@index([reason])
+  @@index([dismissed])
 }
