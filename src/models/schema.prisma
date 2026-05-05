@@ -405,6 +405,7 @@ model MatchRequest {
 
   respondedAt DateTime?
   expiresAt   DateTime?
+  voiceNoteUrl String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

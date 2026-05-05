@@ -30,6 +30,36 @@ export const createMatch = async ({ userAId, userBId, trx = null }) => {
   });
 };
 
+export const findById = async (matchId, trx = null) => {
+  const db = dbClient(trx);
+
+  return db.match.findUnique({
+    where: { id: matchId },
+    include: {
+      userA: {
+        select: {
+          id: true,
+          profile: true,
+          profilePhotos: {
+            where: { status: "ACTIVE" },
+            orderBy: [{ isPrimary: "desc" }, { position: "asc" }],
+          },
+        },
+      },
+      userB: {
+        select: {
+          id: true,
+          profile: true,
+          profilePhotos: {
+            where: { status: "ACTIVE" },
+            orderBy: [{ isPrimary: "desc" }, { position: "asc" }],
+          },
+        },
+      },
+    },
+  });
+};
+
 export const createMatchIfNotExists = async (
   { userAId, userBId },
   trx = null,
