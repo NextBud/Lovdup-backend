@@ -1,7 +1,7 @@
 import {
+  BadRequestError,
   ForbiddenError,
   NotFoundException,
-  BadRequestError,
 } from "../../lib/classes/errorClasses.js";
 import * as matchDb from "./match.db.js";
 
@@ -9,29 +9,38 @@ const getOtherUserFromMatch = (match, userId) => {
   return match.userAId === userId ? match.userB : match.userA;
 };
 
+const formatMatchedUser = (user) => {
+  const profile = user.profile;
+  const primaryPhoto = user.profilePhotos?.[0] || null;
+
+  return {
+    id: user.id,
+    profileId: profile?.id || null,
+
+    firstName: profile?.firstName || null,
+    lastName: profile?.lastName || null,
+    name: profile ? `${profile.firstName} ${profile.lastName}`.trim() : null,
+
+    photo: primaryPhoto?.url || null,
+    photos: user.profilePhotos || [],
+
+    occupation: profile?.occupation || null,
+    city: profile?.residenceCity || null,
+    country: profile?.residenceCountry || null,
+    aboutMe: profile?.aboutMe || null,
+  };
+};
+
 const formatMatch = (match, userId) => {
   const otherUser = getOtherUserFromMatch(match, userId);
-  const profile = otherUser.profile;
-  const primaryPhoto = otherUser.profilePhotos?.[0] || null;
 
   return {
     id: match.id,
     status: match.status,
     matchedAt: match.matchedAt,
+    unmatchedAt: match.unmatchedAt || null,
 
-    user: {
-      id: otherUser.id,
-      profileId: profile?.id || null,
-      firstName: profile?.firstName || null,
-      lastName: profile?.lastName || null,
-      name: profile ? `${profile.firstName} ${profile.lastName}`.trim() : null,
-      photo: primaryPhoto?.url || null,
-      photos: otherUser.profilePhotos || [],
-      occupation: profile?.occupation || null,
-      city: profile?.residenceCity || null,
-      country: profile?.residenceCountry || null,
-      aboutMe: profile?.aboutMe || null,
-    },
+    user: formatMatchedUser(otherUser),
   };
 };
 

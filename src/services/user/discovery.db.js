@@ -5,7 +5,7 @@ const dbClient = (trx) => trx || prisma;
 export const findDiscoveryCandidates = async ({
   viewerId,
   preferredGenders = [],
-  limit = 2,
+  limit = 20,
   trx = null,
 }) => {
   const db = dbClient(trx);
@@ -15,9 +15,11 @@ export const findDiscoveryCandidates = async ({
       id: {
         not: viewerId,
       },
+
       status: "ACTIVE",
       isActive: true,
       isSuspended: false,
+
       profile: {
         isNot: null,
         ...(preferredGenders.length > 0
@@ -28,20 +30,49 @@ export const findDiscoveryCandidates = async ({
             }
           : {}),
       },
+
       candidateMatchResults: {
         none: {
           viewerId,
         },
       },
+
       receivedMatchRequests: {
         none: {
           senderId: viewerId,
         },
       },
+
+      matchesAsUserA: {
+        none: {
+          userBId: viewerId,
+          status: "ACTIVE",
+        },
+      },
+
+      matchesAsUserB: {
+        none: {
+          userAId: viewerId,
+          status: "ACTIVE",
+        },
+      },
+      blocksReceived: {
+        none: {
+          blockerId: viewerId,
+        },
+      },
+
+      blocksMade: {
+        none: {
+          blockedId: viewerId,
+        },
+      },
     },
+
     select: {
       id: true,
       email: true,
+
       profile: {
         select: {
           id: true,
@@ -49,20 +80,27 @@ export const findDiscoveryCandidates = async ({
           lastName: true,
           birthDate: true,
           gender: true,
-          residenceCity: true,
+          originCountry: true,
           residenceCountry: true,
+          residenceCity: true,
           occupation: true,
           languages: true,
           aboutMe: true,
           religion: true,
+          religionImportance: true,
           drinking: true,
           smoking: true,
           socialLife: true,
+          fitnessImportance: true,
+          moneyStyle: true,
+          relocationFeelings: true,
+          financialStatus: true,
           childrenPreference: true,
           personalCommStyle: true,
           personalTuesdayVibe: true,
         },
       },
+
       profilePhotos: {
         where: {
           status: "ACTIVE",
@@ -75,6 +113,7 @@ export const findDiscoveryCandidates = async ({
           isPrimary: true,
         },
       },
+
       voiceAnswers: {
         where: {
           status: "ACTIVE",
@@ -94,9 +133,11 @@ export const findDiscoveryCandidates = async ({
         },
       },
     },
+
     take: limit,
   });
 };
+
 
 export const createMatchResult = async (payload, trx = null) => {
   const db = dbClient(trx);

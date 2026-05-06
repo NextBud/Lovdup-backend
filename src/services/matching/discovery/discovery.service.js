@@ -1,6 +1,13 @@
+import prisma from "../../config/prisma.js";
 import { BadRequestError } from "../../lib/classes/errorClasses.js";
+import { getPrice } from "../../config/pricing.service.js";
+import * as walletService from "../../wallet/wallet.service.js";
 import * as matchPreferenceDb from "../matchPreference/matchPreference.db.js";
 import * as discoveryDb from "./discovery.db.js";
+import * as compatibilityScoreService from "../compatibilityScore/compatibilityScore.service.js";
+
+const CANDIDATE_POOL_LIMIT = 20;
+const DISCOVERY_RESULT_LIMIT = 2;
 
 const calculateAge = (birthDate) => {
   if (!birthDate) return null;
@@ -11,60 +18,11 @@ const calculateAge = (birthDate) => {
   let age = today.getFullYear() - dob.getFullYear();
   const monthDiff = today.getMonth() - dob.getMonth();
 
-  if (
-    monthDiff < 0 ||
-    (monthDiff === 0 && today.getDate() < dob.getDate())
-  ) {
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
     age -= 1;
   }
 
   return age;
-};
-
-const calculateBasicCompatibilityScore = (viewerPreference, candidate) => {
-  let score = 60;
-
-  const profile = candidate.profile;
-
-  if (!profile) return 0;
-
-  if (
-    viewerPreference.preferredGenders?.length &&
-    viewerPreference.preferredGenders.includes(profile.gender)
-  ) {
-    score += 10;
-  }
-
-  if (
-    viewerPreference.religionPreference &&
-    viewerPreference.religionPreference !== "Open to all" &&
-    profile.religion
-  ) {
-    score += 5;
-  }
-
-  if (
-    viewerPreference.childrenPreference &&
-    profile.childrenPreference === viewerPreference.childrenPreference
-  ) {
-    score += 5;
-  }
-
-  if (
-    viewerPreference.communicationStyle &&
-    profile.personalCommStyle === viewerPreference.communicationStyle
-  ) {
-    score += 5;
-  }
-
-  if (
-    viewerPreference.tuesdayFeeling &&
-    profile.personalTuesdayVibe === viewerPreference.tuesdayFeeling
-  ) {
-    score += 5;
-  }
-
-  return Math.min(score, 98);
 };
 
 const formatDiscoveryCandidate = ({ candidate, score }) => {
@@ -110,49 +68,105 @@ const formatDiscoveryCandidate = ({ candidate, score }) => {
   };
 };
 
-export const requestDiscoveryMatches = async (viewerId, trx = null) => {
+const generateDiscoveryMatches = async (viewerId, trx) => {
   const preference = await matchPreferenceDb.findByUserId(viewerId, trx);
 
   if (!preference) {
-    throw new BadRequestError("Set your match preferences before requesting matches");
+    throw new BadRequestError(
+      "Set your match preferences before requesting matches",
+    );
   }
+
+  const price = getPrice("discovery.requestMatches");
+
+  await walletService.debitCoins({
+    userId: viewerId,
+    amount: price.amount,
+    reason: price.action,
+    description: price.description,
+    metadata: {
+      source: "discovery",
+    },
+    trx,
+  });
 
   const candidates = await discoveryDb.findDiscoveryCandidates({
     viewerId,
     preferredGenders: preference.preferredGenders,
-    limit: 2,
+    limit: CANDIDATE_POOL_LIMIT,
     trx,
   });
 
-  const formattedCandidates = candidates.map((candidate) => {
-    const score = calculateBasicCompatibilityScore(preference, candidate);
+  const scoredCandidates = await Promise.all(
+    candidates.map(async (candidate) => {
+      const compatibilityScore =
+        await compatibilityScoreService.calculateAndUpsertCompatibilityScore({
+          viewerId,
+          candidate,
+          viewerPreference: preference,
+          trx,
+        });
 
-    return formatDiscoveryCandidate({
-      candidate,
-      score,
-    });
-  });
+      return {
+        candidate,
+        compatibilityScore,
+      };
+    }),
+  );
 
-  const matchResultsPayload = formattedCandidates.map((candidate) => ({
-    viewerId,
-    candidateId: candidate.id,
-    score: candidate.matchScore,
-    reason:
-      candidate.matchScore >= preference.minCompatibilityScore
-        ? "COMPATIBLE"
-        : "LOW_SCORE",
-    dismissed: false,
-  }));
+  const rankedCandidates = scoredCandidates
+    .filter(({ compatibilityScore }) => {
+      return compatibilityScore.score >= preference.minCompatibilityScore;
+    })
+    .sort((a, b) => {
+      return b.compatibilityScore.score - a.compatibilityScore.score;
+    })
+    .slice(0, DISCOVERY_RESULT_LIMIT);
+
+  if (!rankedCandidates.length) {
+    return [];
+  }
+
+  const formattedCandidates = rankedCandidates.map(
+    ({ candidate, compatibilityScore }) => {
+      return formatDiscoveryCandidate({
+        candidate,
+        score: compatibilityScore.score,
+      });
+    },
+  );
+
+  const matchResultsPayload = rankedCandidates.map(
+    ({ candidate, compatibilityScore }, index) => ({
+      viewerId,
+      candidateId: candidate.id,
+      compatibilityScoreId: compatibilityScore.id,
+      score: compatibilityScore.score,
+      rank: index + 1,
+      reason: "COMPATIBLE",
+      dismissed: false,
+    }),
+  );
 
   await discoveryDb.createManyMatchResults(matchResultsPayload, trx);
 
   return formattedCandidates;
 };
 
+export const requestDiscoveryMatches = async (viewerId, trx = null) => {
+  if (trx) {
+    return generateDiscoveryMatches(viewerId, trx);
+  }
+
+  return prisma.$transaction(async (transactionClient) => {
+    return generateDiscoveryMatches(viewerId, transactionClient);
+  });
+};
+
 export const getLatestDiscoveryMatches = async (viewerId, trx = null) => {
   const results = await discoveryDb.findViewerMatchResults({
     viewerId,
-    limit: 2,
+    limit: DISCOVERY_RESULT_LIMIT,
     trx,
   });
 

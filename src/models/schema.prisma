@@ -127,6 +127,11 @@ model User {
 
   matchPreference MatchPreference?
 
+  walletTransactions WalletTransaction[]
+
+  blocksMade     Block[] @relation("BlocksMade")
+  blocksReceived Block[] @relation("BlocksReceived")
+
   sentMatchRequests     MatchRequest[] @relation("SentMatchRequests")
   receivedMatchRequests MatchRequest[] @relation("ReceivedMatchRequests")
 
@@ -170,6 +175,45 @@ model AuthSession {
   @@index([userId])
 }
 
+enum WalletTransactionType {
+  CREDIT
+  DEBIT
+}
+
+enum WalletTransactionReason {
+  REQUEST_NEW_MATCHES
+  START_STAGE_1
+  COMPLIMENT_PICTURE
+  ADMIN_ADJUSTMENT
+}
+
+model WalletTransaction {
+  id String @id @default(uuid())
+
+  walletId String
+  userId   String
+
+  type   WalletTransactionType
+  reason WalletTransactionReason
+
+  amount        Int
+  balanceBefore Int
+  balanceAfter  Int
+
+  description String?
+  metadata    Json?
+
+  createdAt DateTime @default(now())
+
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([walletId])
+  @@index([userId])
+  @@index([reason])
+  @@index([createdAt])
+}
+
 model Wallet {
   id        String   @id @default(uuid())
   userId    String   @unique
@@ -177,7 +221,8 @@ model Wallet {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions WalletTransaction[]
 }
 
 // ─── Profile ──────────────────────────────────────────────────────────────
@@ -409,7 +454,6 @@ model MatchRequest {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
   sender   User @relation("SentMatchRequests", fields: [senderId], references: [id], onDelete: Cascade)
   receiver User @relation("ReceivedMatchRequests", fields: [receiverId], references: [id], onDelete: Cascade)
 
@@ -445,6 +489,24 @@ model Match {
   @@index([status])
 }
 
+model Block {
+  id String @id @default(uuid())
+
+  blockerId String
+  blockedId String
+
+  reason String?
+
+  createdAt DateTime @default(now())
+
+  blocker User @relation("BlocksMade", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked User @relation("BlocksReceived", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerId, blockedId])
+  @@index([blockerId])
+  @@index([blockedId])
+}
+
 // ─── Match Results / Discovery History ────────────────────────────────────
 
 model MatchResult {
@@ -454,6 +516,7 @@ model MatchResult {
   candidateId String
 
   compatibilityScoreId String?
+  rank                 Int?
 
   score  Int?
   reason MatchResultReason

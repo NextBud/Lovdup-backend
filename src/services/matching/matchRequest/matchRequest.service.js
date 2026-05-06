@@ -5,11 +5,35 @@ import {
   ForbiddenError,
   NotFoundException,
 } from "../../lib/classes/errorClasses.js";
+import configService  from "../../../classes/configClass.js";
+import { getPrice } from "../../config/pricing.service.js";
+import * as walletService from "../../wallet/wallet.service.js";
 import * as matchRequestDb from "./matchRequest.db.js";
 import * as matchDb from "../match/match.db.js";
+import { eventBus } from "../../events/eventBus.js";
+import { EVENT_TYPES } from "../../events/eventTypes.js";
 
 const normalizePair = (userOneId, userTwoId) => {
   return [userOneId, userTwoId].sort();
+};
+
+const getMatchRequestExpiryDate = () => {
+  const expiryDays = Number(
+    configService.getOrThrow("MATCH_REQUEST_EXPIRY_DAYS"),
+  );
+
+  if (!Number.isInteger(expiryDays) || expiryDays <= 0) {
+    throw new BadRequestError("Invalid MATCH_REQUEST_EXPIRY_DAYS config");
+  }
+
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + expiryDays);
+
+  return expiresAt;
+};
+
+const hasRequestExpired = (request) => {
+  return request.expiresAt && new Date(request.expiresAt) < new Date();
 };
 
 const ensureUserCanReceiveRequest = (user) => {
@@ -26,8 +50,17 @@ const ensureUserCanReceiveRequest = (user) => {
   }
 };
 
+const emitEvents = (eventPayloads) => {
+  for (const event of eventPayloads) {
+    eventBus.emit(event.type, event.payload);
+  }
+};
+
 export const createMatchRequest = async (senderId, payload) => {
-  return prisma.$transaction(async (trx) => {
+  const eventPayloads = [];
+  const price = getPrice("matching.requestMatch");
+
+  const request = await prisma.$transaction(async (trx) => {
     const { receiverId, type, message, voiceNoteUrl } = payload;
 
     if (senderId === receiverId) {
@@ -43,7 +76,7 @@ export const createMatchRequest = async (senderId, payload) => {
       trx,
     });
 
-    if (existingRequest) {
+    if (existingRequest && existingRequest.status !== "EXPIRED") {
       throw new ConflictException("You already sent a request to this user");
     }
 
@@ -53,17 +86,44 @@ export const createMatchRequest = async (senderId, payload) => {
       trx,
     });
 
-    const request = await matchRequestDb.createRequest(
+    await walletService.debitCoins({
+      userId: senderId,
+      amount: price.amount,
+      reason: price.action,
+      description: price.description,
+      metadata: {
+        receiverId,
+        type,
+      },
+      trx,
+    });
+
+    const createdRequest = await matchRequestDb.createRequest(
       {
         senderId,
         receiverId,
         type,
         message: message || null,
+        voiceNoteUrl: voiceNoteUrl || null,
+        expiresAt: getMatchRequestExpiryDate(),
       },
       trx,
     );
 
-    if (reverseRequest?.status === "PENDING") {
+    eventPayloads.push({
+      type: EVENT_TYPES.MATCH_REQUEST_SENT,
+      payload: {
+        requestId: createdRequest.id,
+        senderId,
+        receiverId,
+        requestType: type,
+      },
+    });
+
+    if (
+      reverseRequest?.status === "PENDING" &&
+      !hasRequestExpired(reverseRequest)
+    ) {
       await matchRequestDb.updateStatus({
         requestId: reverseRequest.id,
         status: "ACCEPTED",
@@ -71,24 +131,37 @@ export const createMatchRequest = async (senderId, payload) => {
       });
 
       await matchRequestDb.updateStatus({
-        requestId: request.id,
+        requestId: createdRequest.id,
         status: "ACCEPTED",
         trx,
       });
 
       const [userAId, userBId] = normalizePair(senderId, receiverId);
 
-      await matchDb.createMatchIfNotExists(
+      const match = await matchDb.createMatchIfNotExists(
         {
           userAId,
           userBId,
         },
         trx,
       );
+
+      eventPayloads.push({
+        type: EVENT_TYPES.MATCH_CREATED,
+        payload: {
+          matchId: match.id,
+          userAId,
+          userBId,
+        },
+      });
     }
 
-    return request;
+    return createdRequest;
   });
+
+  emitEvents(eventPayloads);
+
+  return request;
 };
 
 export const getSentMatchRequests = async (userId, trx = null) => {
@@ -100,7 +173,9 @@ export const getReceivedMatchRequests = async (userId, trx = null) => {
 };
 
 export const respondToMatchRequest = async ({ userId, requestId, status }) => {
-  return prisma.$transaction(async (trx) => {
+  const eventPayloads = [];
+
+  const updatedRequest = await prisma.$transaction(async (trx) => {
     const request = await matchRequestDb.findById(requestId, trx);
 
     if (!request) {
@@ -115,7 +190,17 @@ export const respondToMatchRequest = async ({ userId, requestId, status }) => {
       throw new BadRequestError("This match request has already been handled");
     }
 
-    const updatedRequest = await matchRequestDb.updateStatus({
+    if (hasRequestExpired(request)) {
+      await matchRequestDb.updateStatus({
+        requestId,
+        status: "EXPIRED",
+        trx,
+      });
+
+      throw new BadRequestError("This match request has expired");
+    }
+
+    const handledRequest = await matchRequestDb.updateStatus({
       requestId,
       status,
       trx,
@@ -127,15 +212,28 @@ export const respondToMatchRequest = async ({ userId, requestId, status }) => {
         request.receiverId,
       );
 
-      await matchDb.createMatchIfNotExists(
+      const match = await matchDb.createMatchIfNotExists(
         {
           userAId,
           userBId,
         },
         trx,
       );
+
+      eventPayloads.push({
+        type: EVENT_TYPES.MATCH_CREATED,
+        payload: {
+          matchId: match.id,
+          userAId,
+          userBId,
+        },
+      });
     }
 
-    return updatedRequest;
+    return handledRequest;
   });
+
+  emitEvents(eventPayloads);
+
+  return updatedRequest;
 };
