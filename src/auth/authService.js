@@ -1,8 +1,8 @@
 import prisma from "../config/prisma.js";
-import * as userDb from "../user/userDbService.js";
+import * as userDb from "../services/user/userDbService.js";
 import * as walletDb from "../services/wallet/walletDbService.js";
-import * as onboardingDb from "../onboarding/onboardingDbService.js";
-import * as profileDb from "../profile/profileDbService.js";
+import * as onboardingDb from "../services/onboarding/onboardingDbService.js";
+import * as profileDb from "../services/profiles/profileDbService.js";
 import {
   ConflictException,
   NotFoundException,

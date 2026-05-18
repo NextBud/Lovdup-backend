@@ -1,9 +1,9 @@
 import express from "express";
 import cors from "cors";
-import "./events/index.js";
-import authRoutes from "./auth/authRoutes.js";
-import onboardingRoutes from "./onboarding/onboardingRoutes.js";
-import errorMiddleware from "./middlewares/errorMiddleware.js";
+import "../events/index.js";
+import authRoutes from "../routes/authRoutes.js";
+import onboardingRoutes from "../routes/onboardingRoutes.js";
+import errorMiddleware from "../middlewares/errorMiddleware.js";
 
 const app = express();
 

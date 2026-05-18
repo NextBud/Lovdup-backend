@@ -1,4 +1,4 @@
-import app from "./app.js";
+import app from "./src/server/server.js";
 import configService from "./lib/classes/configClass.js";
 
 const PORT = configService.get("PORT") || 5000;
