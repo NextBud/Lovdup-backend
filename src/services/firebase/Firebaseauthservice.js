@@ -1,11 +1,9 @@
 import admin from "../config/firebaseAdmin.js";
 import prisma from "../config/prisma.js";
-import * as userDb from "../user/userDbService.js";
+import * as userDb from "../services/user/userDbService.js";
 import * as walletDb from "../services/wallet/walletDbService.js";
 import { signAccessToken } from "../lib/token.js";
-import { UnauthorizedException } from "../lib/classes/errorClasses.js";
-
-// ─── Helper ───────────────────────────────────────────────────────────────────
+import { UnauthorizedException } from "../classes/errorClasses.js";
 
 const sanitizeUser = (user) => ({
   id: user.id,
@@ -13,95 +11,94 @@ const sanitizeUser = (user) => ({
   phone: user.phone,
   emailVerified: user.emailVerified,
   phoneVerified: user.phoneVerified,
-  verified: user.verified,
   role: user.role,
   status: user.status,
   createdAt: user.createdAt,
 });
 
-// ─── Service ──────────────────────────────────────────────────────────────────
-
-/**
- * POST /auth/firebase
- *
- * Called immediately after the user completes Firebase sign-in on the frontend.
- * 1. Verifies the Firebase ID token with Firebase Admin SDK
- * 2. Finds or creates the matching Prisma user
- * 3. Returns your app's own JWT so all subsequent requests use it
- *
- * Supports Google, Apple, and phone auth — Firebase abstracts the difference.
- * The `providerUid` stored is the Firebase UID (stable across sign-ins).
- */
 export const firebaseExchange = async (idToken) => {
-  // 1. Verify the token with Firebase Admin
-  let decodedToken;
+  let decoded;
+
   try {
-    decodedToken = await admin.auth().verifyIdToken(idToken);
-  } catch (err) {
-    throw new UnauthorizedException("Invalid Firebase ID token");
+    decoded = await admin.auth().verifyIdToken(idToken);
+  } catch {
+    throw new UnauthorizedException("Invalid authentication token");
   }
 
-  const { uid, email, phone_number: phone, email_verified } = decodedToken;
+  const {
+    uid,
+    email,
+    phone_number: phone,
+    email_verified: emailVerified,
+  } = decoded;
 
-  // 2. Try to find an existing user by Firebase UID (authProvider record)
-  let user = await prisma.authProvider
-    .findUnique({
-      where: { providerUid: uid },
-      include: { user: true },
-    })
-    .then((ap) => ap?.user ?? null);
+  // STEP 1: resolve identity provider
+  const provider = await prisma.authProvider.findUnique({
+    where: {
+      provider_providerUid: {
+        provider: "FIREBASE",
+        providerUid: uid,
+      },
+    },
+    include: { user: true },
+  });
 
-  // 3. If no match, find by email or create a new user
+  let user = provider?.user || null;
+
+  // STEP 2: fallback resolution by email
+  if (!user && email) {
+    user = await userDb.findUserByEmail(email);
+  }
+
+  // STEP 3: create user if missing
   if (!user) {
-    if (email) {
-      user = await userDb.findUserByEmail(email);
-    }
-
-    if (!user) {
-      // First time this Firebase identity has been seen — create the user
-      user = await prisma.$transaction(async (tx) => {
-        const created = await userDb.createUser(
-          {
-            email: email || null,
-            phone: phone || null,
-            emailVerified: email_verified ?? false,
-            phoneVerified: !!phone,
-            // No passwordHash — Firebase users never use password auth on this app
-            authProviders: {
-              create: {
-                provider: "FIREBASE",
-                providerUid: uid,
-              },
+    user = await prisma.$transaction(async (tx) => {
+      const created = await userDb.createUser(
+        {
+          email: email || null,
+          phone: phone || null,
+          emailVerified: !!emailVerified,
+          phoneVerified: !!phone,
+          authProviders: {
+            create: {
+              provider: "FIREBASE",
+              providerUid: uid,
             },
           },
-          tx,
-        );
+        },
+        tx,
+      );
 
-        await walletDb.createWallet({ userId: created.id, balance: 0 }, tx);
+      await walletDb.createWallet({ userId: created.id }, tx);
 
-        return created;
-      });
-    } else {
-      // Existing email-based user — attach the Firebase provider record
-      await prisma.authProvider.upsert({
-        where: { providerUid: uid },
-        update: {},
-        create: {
-          userId: user.id,
+      return created;
+    });
+  } else {
+    // STEP 4: ensure provider linkage exists
+    await prisma.authProvider.upsert({
+      where: {
+        provider_providerUid: {
           provider: "FIREBASE",
           providerUid: uid,
         },
-      });
-    }
+      },
+      update: { userId: user.id },
+      create: {
+        userId: user.id,
+        provider: "FIREBASE",
+        providerUid: uid,
+      },
+    });
   }
 
-  // 4. Guard against suspended / deleted accounts
-  if (!user.isActive || user.isSuspended || user.status === "DELETED") {
-    throw new UnauthorizedException("Account is not active");
+  // STEP 5: safety checks
+  if (user.status !== "ACTIVE") {
+    throw new UnauthorizedException("Account disabled");
   }
 
   await userDb.updateLastLogin(user.id);
 
+  // STEP 6: issue token ONLY
   return {
     user: sanitizeUser(user),
     token: signAccessToken(user),

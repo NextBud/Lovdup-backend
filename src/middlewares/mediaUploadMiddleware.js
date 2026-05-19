@@ -1,5 +1,12 @@
+/**
+ * mediaUploadMiddleware.js
+ *
+ * Multer configuration for all media uploads.
+ * Files are held in memory (Buffer) and passed to Cloudinary — no disk writes.
+ */
+
 import multer from "multer";
-import { BadRequestError } from "../lib/classes/errorClasses.js";
+import { BadRequestError } from "../../lib/classes/errorClasses.js";
 
 const storage = multer.memoryStorage();
 
@@ -11,29 +18,27 @@ const fileFilter = (req, file, cb) => {
     "audio/mpeg",
     "audio/wav",
     "audio/webm",
+    "audio/mp4",
+    "audio/ogg",
   ];
 
   if (!allowedTypes.includes(file.mimetype)) {
-    return cb(new BadRequestError("Unsupported file type"), false);
+    return cb(
+      new BadRequestError(`Unsupported file type: ${file.mimetype}`),
+      false,
+    );
   }
 
   cb(null, true);
 };
 
-export const uploadOnboardingMedia = multer({
+const uploadMedia = multer({
   storage,
   fileFilter,
   limits: {
-    fileSize: 10 * 1024 * 1024,
+    fileSize: 10 * 1024 * 1024, // 10 MB per file
   },
 });
 
-export const handleOnboardingPhotoUpload = uploadOnboardingMedia.array(
-  "photos",
-  4,
-);
-
-export const handleOnboardingVoiceUpload = uploadOnboardingMedia.array(
-  "voices",
-  5,
-);
+export const handleOnboardingPhotoUpload = uploadMedia.array("photos", 4);
+export const handleOnboardingVoiceUpload = uploadMedia.array("voices", 5);

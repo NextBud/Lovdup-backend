@@ -1,9 +1,9 @@
 import express from "express";
-import { authMiddleware } from "../auth/authMiddleware.js";
-import { validateBody } from "../middlewares/validate.js";
+import { authMiddleware } from "../authMiddlware/authMiddleware.js";
+import { validateBody } from "../middlewares/validator/validator.js";
 
-import * as onboardingController from "./onboardingController.js";
-import * as onboardingMediaController from "./onboardingMediaController.js";
+import * as onboardingController from "../services/onboarding/onboardingController.js";
+import * as onboardingMediaController from "../services/onboarding/onboardingMediaController.js";
 
 import {
   handleOnboardingPhotoUpload,
@@ -13,7 +13,7 @@ import {
 import {
   completeOnboardingSchema,
   saveOnboardingProgressSchema,
-} from "./onboardingValidator.js";
+} from "../services/onboarding/onboardingValidator.js";
 
 const router = express.Router();
 

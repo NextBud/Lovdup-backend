@@ -1,4 +1,3 @@
-import logger from "../lib/logger.js";
 import { validator } from "../../classes/validatorClass.js";
 import { ValidationException } from "../../classes/errorClasses.js";
 

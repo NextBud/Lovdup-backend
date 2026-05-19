@@ -1,129 +1,151 @@
-import prisma from "../config/prisma.js";
-import * as mediaDb from "../media/mediaDbService.js";
-import * as onboardingDb from "./onboardingDbService.js";
+import prisma from "../../config/prisma.js";
 import { processMediaUploads } from "../media/processMediaUploads.js";
-import { BadRequestError } from "../lib/classes/errorClasses.js";
-import { asyncWrapper } from "../lib/asyncWrapper.js";
+import * as onboardingDb from "./onboardingDbService.js";
+import { BadRequestError } from "../../lib/classes/errorClasses.js";
+import asyncWrapper from "../../lib/asyncWrapper.js";
+import {
+  MAX_ONBOARDING_PHOTOS,
+  MIN_ONBOARDING_PHOTOS,
+  MAX_ONBOARDING_VOICES,
+} from "./onboarding.constants.js";
+
+// ─────────────────────────────────────────────
+// PHOTOS  (step 23)
+// ─────────────────────────────────────────────
 
 export const uploadOnboardingPhotos = asyncWrapper(async (req, res) => {
   const userId = req.user.userId;
 
   if (!req.files?.length) {
-    throw new BadRequestError("Please upload at least one photo");
+    throw new BadRequestError("Please upload at least one photo.");
   }
 
-  if (req.files.length > 4) {
-    throw new BadRequestError("You can upload a maximum of 4 photos");
+  if (req.files.length > MAX_ONBOARDING_PHOTOS) {
+    throw new BadRequestError(
+      `Maximum ${MAX_ONBOARDING_PHOTOS} photos allowed.`,
+    );
   }
 
+  // Upload all files to Cloudinary in parallel
   const uploadedItems = await processMediaUploads({
     files: req.files,
-    folder: `onboarding/${userId}/photos`,
+    folder: `lovdup/onboarding/${userId}/photos`,
     mediaType: "image",
   });
 
   const result = await prisma.$transaction(async (tx) => {
-    const media = await mediaDb.createManyMedia(
-      uploadedItems.map((item) => ({
-        ...item,
-        userId,
-      })),
-      tx,
-    );
-
     const existing = await onboardingDb.findProgressByUserId(userId, tx);
-
     const existingDraft = existing?.draftData || {};
-    const existingPhotos = existingDraft.photos || [];
 
-    const photoIds = media.map((item) => item.id);
+    // Count already-staged photos so we can assign sequential positions
+    const alreadyStaged = await tx.onboardingMedia.count({
+      where: { userId, mediaType: "image" },
+    });
 
-    const progress = await onboardingDb.upsertProgress(
+    const items = uploadedItems.map((item, index) => ({
+      ...item,
+      position: alreadyStaged + index + 1,
+    }));
+
+    await onboardingDb.createOnboardingMedia(userId, items, tx);
+
+    // Track photo IDs in draft for quick frontend reference
+    const photoPublicIds = items.map((i) => i.publicId);
+    const existingPhotos = existingDraft.photoPublicIds || [];
+
+    const progress = await onboardingDb.saveProgress(
       userId,
       {
         currentStep: existing?.currentStep ?? 23,
-        completedSections: Array.from(
-          new Set([...(existing?.completedSections || []), "photos"]),
-        ),
+        completedSections: ["photos"],
         draftData: {
-          ...existingDraft,
-          photos: [...existingPhotos, ...photoIds],
+          photoPublicIds: [...existingPhotos, ...photoPublicIds],
         },
-        status: "IN_PROGRESS",
       },
       tx,
     );
 
-    return { media, progress };
+    return { items, progress };
   });
 
   return res.status(201).json({
     success: true,
-    message: "Photos uploaded successfully",
+    message: "Photos uploaded.",
     data: {
-      photos: result.media,
+      photos: result.items,
       onboarding: result.progress,
     },
   });
 });
 
+// ─────────────────────────────────────────────
+// VOICES  (steps 18-22, one recording per request)
+// ─────────────────────────────────────────────
+
 export const uploadOnboardingVoices = asyncWrapper(async (req, res) => {
   const userId = req.user.userId;
 
   if (!req.files?.length) {
-    throw new BadRequestError("Please upload at least one voice recording");
+    throw new BadRequestError("Please upload at least one voice recording.");
   }
 
-  if (req.files.length > 5) {
-    throw new BadRequestError("You can upload a maximum of 5 voice recordings");
+  if (req.files.length > MAX_ONBOARDING_VOICES) {
+    throw new BadRequestError(
+      `Maximum ${MAX_ONBOARDING_VOICES} voice recordings allowed.`,
+    );
+  }
+
+  // promptIds must be sent as a JSON array in the request body
+  // e.g. body: { promptIds: ["prompt-uuid-1", "prompt-uuid-2"] }
+  const promptIds = req.body.promptIds ? JSON.parse(req.body.promptIds) : [];
+
+  if (promptIds.length !== req.files.length) {
+    throw new BadRequestError(
+      "Each voice recording must have a corresponding promptId. " +
+        `Got ${req.files.length} file(s) but ${promptIds.length} promptId(s).`,
+    );
   }
 
   const uploadedItems = await processMediaUploads({
     files: req.files,
-    folder: `onboarding/${userId}/voices`,
+    folder: `lovdup/onboarding/${userId}/voices`,
     mediaType: "audio",
   });
 
   const result = await prisma.$transaction(async (tx) => {
-    const media = await mediaDb.createManyMedia(
-      uploadedItems.map((item) => ({
-        ...item,
-        userId,
-      })),
-      tx,
-    );
-
     const existing = await onboardingDb.findProgressByUserId(userId, tx);
-
     const existingDraft = existing?.draftData || {};
-    const existingVoices = existingDraft.voiceRecordings || [];
 
-    const voiceIds = media.map((item) => item.id);
+    const items = uploadedItems.map((item, index) => ({
+      ...item,
+      promptId: promptIds[index],
+    }));
 
-    const progress = await onboardingDb.upsertProgress(
+    await onboardingDb.createOnboardingMedia(userId, items, tx);
+
+    const existingVoices = existingDraft.voicePublicIds || [];
+    const voicePublicIds = items.map((i) => i.publicId);
+
+    const progress = await onboardingDb.saveProgress(
       userId,
       {
         currentStep: existing?.currentStep ?? 18,
-        completedSections: Array.from(
-          new Set([...(existing?.completedSections || []), "voice"]),
-        ),
+        completedSections: ["voice"],
         draftData: {
-          ...existingDraft,
-          voiceRecordings: [...existingVoices, ...voiceIds],
+          voicePublicIds: [...existingVoices, ...voicePublicIds],
         },
-        status: "IN_PROGRESS",
       },
       tx,
     );
 
-    return { media, progress };
+    return { items, progress };
   });
 
   return res.status(201).json({
     success: true,
-    message: "Voice recordings uploaded successfully",
+    message: "Voice recordings uploaded.",
     data: {
-      voices: result.media,
+      voices: result.items,
       onboarding: result.progress,
     },
   });

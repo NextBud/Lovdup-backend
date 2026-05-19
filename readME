@@ -144,3 +144,9 @@ receiverId
 status
 message
 createdAt
+
+// Database
+npx prisma db pull
+npx prisma generate
+
+npx prisma format
