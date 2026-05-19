@@ -498,6 +498,9 @@ enum WalletTransactionType {
 enum WalletTransactionReason {
   REQUEST_NEW_MATCHES
   START_STAGE_1
+  START_STAGE_2
+  START_STAGE_3
+  START_STAGE_4
   COMPLIMENT_PICTURE
   ADMIN_ADJUSTMENT
 }
