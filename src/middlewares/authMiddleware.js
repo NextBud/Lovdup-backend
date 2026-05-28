@@ -2,7 +2,7 @@ import { verifyAccessToken } from "../lib/token.js";
 import { UnauthorizedException } from "../classes/errorClasses.js";
 import asyncWrapper from "../lib/asyncWrapper.js";
 
-export const protect = asyncWrapper(async (req, res, next) => {
+export const authMiddleware = asyncWrapper(async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader?.startsWith("Bearer ")) {

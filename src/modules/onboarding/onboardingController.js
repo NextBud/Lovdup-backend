@@ -10,11 +10,24 @@ export const getMyOnboarding = asyncWrapper(async (req, res) => {
   });
 });
 
-export const saveProgress = asyncWrapper(async (req, res) => {
-  const result = await onboardingService.saveProgress(
-    req.user.userId,
-    req.body,
-  );
+export const me = asyncWrapper(async (req, res) => {
+  const result = await authService.getMe({
+    userId: req.user.userId,
+    sessionId: req.user.sessionId,
+  });
+
+  return res.status(200).json({
+    success: true,
+    data: result,
+  });
+});
+
+export const saveDraft = asyncWrapper(async (req, res) => {
+  const result = await onboardingService.saveDraft({
+    userId: req.user.userId,
+    stepId: req.params.stepId,
+    data: req.body,
+  });
 
   return res.status(200).json({
     success: true,

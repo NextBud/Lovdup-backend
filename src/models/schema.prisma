@@ -90,6 +90,7 @@ model OnboardingProgress {
   id                String           @id @default(uuid())
   userId            String           @unique
   status            OnboardingStatus @default(NOT_STARTED)
+  maxReachedStep    Int              @default(1) 
   currentStep       Int              @default(1)
   completedSections String[]         @default([])
   draftData         Json?

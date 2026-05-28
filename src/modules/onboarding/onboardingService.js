@@ -2,6 +2,8 @@ import prisma from "../../config/prisma.js";
 import * as onboardingDb from "./onboardingDbService.js";
 import { extractProfilePayloads } from "./onboarding.helpers.js";
 import { ONBOARDING_STATUS } from "./onboarding.constants.js";
+import { computeOnboardingState } from "./onboardingStateMachine.js";
+import { validateStepCompletion } from "./onboarding.guards.js";
 import {
   NotFoundError,
   BadRequestError,
@@ -11,6 +13,24 @@ import {
   completeOnboardingSchema,
   saveOnboardingProgressSchema,
 } from "./onboardingValidator.js";
+
+
+const canCompleteOnboarding = (progress, media) => {
+  const photos = media.filter((m) => m.mediaType === "image");
+  const voices = media.filter((m) => m.mediaType === "audio");
+
+  const photoStep = ONBOARDING_STEP_REGISTRY.photos;
+  const voiceStep = ONBOARDING_STEP_REGISTRY.voice_recording;
+
+  return (
+    validateStepCompletion("photos", {
+      photos,
+    }) &&
+    validateStepCompletion("voice_recording", {
+      voiceAnswers: voices,
+    })
+  );
+};
 
 // ─────────────────────────────────────────────
 // GET
@@ -36,16 +56,41 @@ export const getMyOnboarding = async (userId) => {
 // SAVE PROGRESS (autosave per section)
 // ─────────────────────────────────────────────
 
-export const saveProgress = async (userId, payload) => {
-  const { error, value } = saveOnboardingProgressSchema.validate(payload, {
-    abortEarly: false,
+export const saveProgress = async ({ userId, stepId, data }) => {
+  const progress = await prisma.onboardingProgress.findUnique({
+    where: { userId },
   });
 
-  if (error) {
-    throw new BadRequestError(error.details.map((d) => d.message).join(", "));
-  }
+   await logOnboardingEvent({
+     userId,
+     eventType: "SAVE_PROGRESS_ATTEMPT",
+     stepId,
+     metadata: { keys: Object.keys(data) },
+   });
 
-  return onboardingDb.saveProgress(userId, value);
+  const updatedDraft = {
+    ...progress.draftData,
+    ...data,
+  };
+
+  // 🔥 NEW: enforce registry correctness
+  const isValidStep = validateStepCompletion(stepId, updatedDraft);
+
+   await logOnboardingEvent({
+     userId,
+     eventType: "SAVE_PROGRESS_SUCCESS",
+     stepId,
+   });
+
+  return prisma.onboardingProgress.update({
+    where: { userId },
+    data: {
+      draftData: updatedDraft,
+      currentStep: isValidStep
+        ? Math.max(progress.currentStep, getStepIndex(stepId))
+        : progress.currentStep,
+    },
+  });
 };
 
 // ─────────────────────────────────────────────
@@ -81,6 +126,13 @@ export const completeOnboarding = async (userId, payload) => {
     throw new ConflictError("Onboarding already completed.");
   }
 
+  await logOnboardingEvent({
+    userId,
+    eventType: "COMPLETE_ONBOARDING_ATTEMPT",
+    stepId: null,
+    metadata: { keys: Object.keys(payload) },
+  });
+
   // 3. The transaction
   return prisma.$transaction(async (tx) => {
     // Pull staged media uploaded during steps 18-23
@@ -88,24 +140,28 @@ export const completeOnboarding = async (userId, payload) => {
       userId,
       tx,
     );
-
+    
     const stagedPhotos = stagedMedia
-      .filter((m) => m.mediaType === "image")
-      .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
-
+    .filter((m) => m.mediaType === "image")
+    .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+    
     const stagedVoices = stagedMedia.filter((m) => m.mediaType === "audio");
-
+    
     // Validate media minimums inside the transaction (so we have the latest data)
     if (stagedPhotos.length < 2) {
       throw new BadRequestError(
         "At least 2 photos are required to complete onboarding.",
       );
     }
-
+    
     if (stagedVoices.length < 5) {
       throw new BadRequestError(
         "All 5 voice recordings are required to complete onboarding.",
       );
+    }
+    
+    if (!canCompleteOnboarding(progress, stagedMedia)) {
+      throw new BadRequestError("Onboarding requirements not satisfied.");
     }
 
     // Split flat payload into sub-model shapes
@@ -192,4 +248,26 @@ export const resetOnboarding = async (userId) => {
 
     return { reset: true };
   });
+};
+
+export const getMyOnboardingState = async (userId) => {
+  const progress = await onboardingDb.findProgressByUserId(userId);
+
+  if (!progress) {
+    return {
+      status: ONBOARDING_STATUS.NOT_STARTED,
+      currentStep: 1,
+      maxReachedStep: 1,
+      completedSections: [],
+      draftData: {},
+    };
+  }
+
+  return {
+    status: progress.status,
+    currentStep: progress.currentStep,
+    maxReachedStep: progress.maxReachedStep,
+    completedSections: progress.completedSections,
+    draftData: progress.draftData,
+  };
 };

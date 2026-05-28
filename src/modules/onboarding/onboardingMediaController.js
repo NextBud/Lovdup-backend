@@ -116,6 +116,18 @@ export const uploadOnboardingVoices = asyncWrapper(async (req, res) => {
     const existing = await onboardingDb.findProgressByUserId(userId, tx);
     const existingDraft = existing?.draftData || {};
 
+    const validPrompts = await tx.voicePrompt.findMany({
+      where: {
+        id: {
+          in: promptIds,
+        },
+      },
+    });
+
+    if (validPrompts.length !== promptIds.length) {
+      throw new BadRequestError("Invalid voice prompts.");
+    }
+
     const items = uploadedItems.map((item, index) => ({
       ...item,
       promptId: promptIds[index],

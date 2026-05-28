@@ -17,7 +17,7 @@
 
 import prisma from "../../config/prisma.js";
 import * as userDb from "../../services/user/userDbService.js";
-import * as onboardingDb from "../../services/onboarding/onboardingDbService.js";
+import * as onboardingDb from "../onboarding/onboardingDbService.js";
 import admin from "../../config/firebaseAdmin.js";
 import { comparePassword, hashPassword } from "../../lib/password.js";
 import { signAccessToken } from "../../lib/token.js";
@@ -30,7 +30,7 @@ import {
 import {
   ONBOARDING_STATUS,
   CURRENT_DRAFT_VERSION,
-} from "../../services/onboarding/onboarding.constants.js";
+} from "../onboarding/onboarding.constants.js";
 
 // ─────────────────────────────────────────────
 // INTERNAL HELPERS
@@ -274,6 +274,54 @@ export const authenticateWithFirebase = async ({ idToken, meta }) => {
   });
 
   return buildAuthResponse({ user, tokens });
+};
+
+export const getMe = async ({ userId, sessionId }) => {
+  const session = await prisma.authSession.findFirst({
+    where: {
+      id: sessionId,
+      userId,
+      revokedAt: null,
+      expiresAt: { gt: new Date() },
+    },
+  });
+
+  if (!session) {
+    throw new UnauthorizedException("Session expired or invalid.");
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    include: {
+      profile: true,
+      onboardingProgress: true,
+    },
+  });
+
+  if (!user) {
+    throw new UnauthorizedException("User not found.");
+  }
+
+  return {
+    user: {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      status: user.status,
+    },
+    session: {
+      sessionId,
+      valid: true,
+    },
+    onboarding: {
+      status: user.onboardingProgress?.status ?? "NOT_STARTED",
+      currentStep: user.onboardingProgress?.currentStep ?? 1,
+    },
+    profile: {
+      exists: !!user.profile,
+      completionPercent: user.profile?.completionPercent ?? 0,
+    },
+  };
 };
 
 // ─────────────────────────────────────────────

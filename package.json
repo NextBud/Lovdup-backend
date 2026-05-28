@@ -16,6 +16,7 @@
   "type": "module",
   "dependencies": {
     "@prisma/client": "^6.19.3",
+    "axios": "^1.16.1",
     "bcrypt": "^6.0.0",
     "cloudinary": "^2.10.0",
     "cors": "^2.8.6",
@@ -23,7 +24,13 @@
     "express": "^5.2.1",
     "joi": "^18.1.2",
     "jsonwebtoken": "^9.0.3",
-    "multer": "^2.1.1"
+    "motion": "^12.40.0",
+    "multer": "^2.1.1",
+    "react-hook-form": "^7.76.1",
+    "react-router-dom": "^7.15.1",
+    "use-audio-recorder": "^0.1.0",
+    "zod": "^4.4.3",
+    "zustand": "^5.0.13"
   },
   "devDependencies": {
     "nodemon": "^3.1.14",

@@ -24,39 +24,16 @@ export const findProgressByUserId = async (userId, tx = null) => {
  * Upsert progress — merges draft data and completed sections
  * rather than blindly overwriting them.
  */
-export const saveProgress = async (userId, payload, tx = null) => {
-  const client = db(tx);
-
-  const existing = await client.onboardingProgress.findUnique({
+export const saveProgress = async (userId, payload, tx = prisma) => {
+  return tx.onboardingProgress.upsert({
     where: { userId },
-  });
-
-  const mergedDraftData = {
-    ...(existing?.draftData || {}),
-    ...sanitizeDraftData(payload.draftData),
-  };
-
-  const completedSections = mergeCompletedSections(
-    existing?.completedSections ?? [],
-    payload.completedSections ?? [],
-  );
-
-  return client.onboardingProgress.upsert({
-    where: { userId },
-    update: {
-      currentStep: payload.currentStep ?? existing?.currentStep ?? 1,
-      completedSections,
-      draftData: mergedDraftData,
-      status: ONBOARDING_STATUS.IN_PROGRESS,
-    },
     create: {
       userId,
-      currentStep: payload.currentStep ?? 1,
-      completedSections,
-      draftData: mergedDraftData,
-      draftVersion: CURRENT_DRAFT_VERSION,
-      status: ONBOARDING_STATUS.IN_PROGRESS,
-      startedAt: new Date(),
+      ...payload,
+      maxReachedStep: payload.currentStep,
+    },
+    update: {
+      ...payload,
     },
   });
 };

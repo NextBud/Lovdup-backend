@@ -1,8 +1,11 @@
 import express from "express";
+
 import { authMiddleware } from "../authMiddlware/authMiddleware.js";
+
 import { validateBody } from "../middlewares/validator/validator.js";
 
 import * as onboardingController from "../services/onboarding/onboardingController.js";
+
 import * as onboardingMediaController from "../services/onboarding/onboardingMediaController.js";
 
 import {
@@ -17,38 +20,48 @@ import {
 
 const router = express.Router();
 
-// ─── Global Auth Guard ─────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// AUTH GUARD
+// ─────────────────────────────────────────────
+
 router.use(authMiddleware);
 
-// ─── Onboarding Core ───────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// ONBOARDING CORE
+// ─────────────────────────────────────────────
 
-// GET current onboarding state
+// Current onboarding state
 router.get("/me", onboardingController.getMyOnboarding);
 
-// Save incremental progress (PUT = idempotent update ✔)
+// Save draft
 router.put(
-  "/progress",
+  "/draft",
   validateBody(saveOnboardingProgressSchema),
-  onboardingController.saveProgress,
+  onboardingController.saveDraft,
 );
 
-// Final submission
+// Complete onboarding
 router.post(
   "/complete",
   validateBody(completeOnboardingSchema),
   onboardingController.completeOnboarding,
 );
 
-// ─── Media Uploads ─────────────────────────────────────────────────
+// Reset onboarding
+router.post("/reset", onboardingController.resetOnboarding);
 
-// Upload photos
+// ─────────────────────────────────────────────
+// MEDIA
+// ─────────────────────────────────────────────
+
+// Photos
 router.post(
   "/media/photos",
   handleOnboardingPhotoUpload,
   onboardingMediaController.uploadOnboardingPhotos,
 );
 
-// Upload voice recordings
+// Voices
 router.post(
   "/media/voices",
   handleOnboardingVoiceUpload,

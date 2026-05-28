@@ -54,6 +54,18 @@ export const firebaseAuth = asyncWrapper(async (req, res) => {
   });
 });
 
+export const me = asyncWrapper(async (req, res) => {
+  const result = await authService.getMe({
+    userId: req.user.userId,
+    sessionId: req.user.sessionId,
+  });
+
+  return res.status(200).json({
+    success: true,
+    data: result,
+  });
+});
+
 // POST /auth/refresh
 // Body: { refreshToken }
 export const refresh = asyncWrapper(async (req, res) => {
