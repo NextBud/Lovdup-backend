@@ -6,6 +6,7 @@
  * Routes:
  *   POST /auth/password          → email/password login or register
  *   POST /auth/firebase          → Google / Apple / Phone (Firebase idToken)
+ *   GET  /auth/me                → rehydrate session on app load
  *   POST /auth/refresh           → rotate refresh token, get new access token
  *   POST /auth/logout            → revoke current session
  *   POST /auth/logout-all        → revoke all sessions (all devices)
@@ -15,7 +16,6 @@ import asyncWrapper from "../../lib/asyncWrapper.js";
 import * as authService from "./auth.service.js";
 
 // POST /auth/password
-// Body: { email, password, mode: "LOGIN" | "REGISTER" }
 export const passwordAuth = asyncWrapper(async (req, res) => {
   const { email, password, mode } = req.body;
 
@@ -29,14 +29,10 @@ export const passwordAuth = asyncWrapper(async (req, res) => {
     },
   });
 
-  return res.status(200).json({
-    success: true,
-    data: result,
-  });
+  return res.status(200).json({ success: true, data: result });
 });
 
 // POST /auth/firebase
-// Body: { idToken }
 export const firebaseAuth = asyncWrapper(async (req, res) => {
   const { idToken } = req.body;
 
@@ -48,39 +44,30 @@ export const firebaseAuth = asyncWrapper(async (req, res) => {
     },
   });
 
-  return res.status(200).json({
-    success: true,
-    data: result,
-  });
+  return res.status(200).json({ success: true, data: result });
 });
 
-export const me = asyncWrapper(async (req, res) => {
+// GET /auth/me  (protected)
+// Was exported as `me` — renamed to `getMe` to match auth.routes.js import.
+export const getMe = asyncWrapper(async (req, res) => {
   const result = await authService.getMe({
     userId: req.user.userId,
     sessionId: req.user.sessionId,
   });
 
-  return res.status(200).json({
-    success: true,
-    data: result,
-  });
+  return res.status(200).json({ success: true, data: result });
 });
 
 // POST /auth/refresh
-// Body: { refreshToken }
 export const refresh = asyncWrapper(async (req, res) => {
   const { refreshToken } = req.body;
 
   const result = await authService.refreshSession({ refreshToken });
 
-  return res.status(200).json({
-    success: true,
-    data: result,
-  });
+  return res.status(200).json({ success: true, data: result });
 });
 
-// POST /auth/logout   (requires auth)
-// Revokes the current session only
+// POST /auth/logout  (protected)
 export const logout = asyncWrapper(async (req, res) => {
   await authService.logout({
     userId: req.user.userId,
@@ -93,8 +80,7 @@ export const logout = asyncWrapper(async (req, res) => {
   });
 });
 
-// POST /auth/logout-all   (requires auth)
-// Revokes all sessions across all devices
+// POST /auth/logout-all  (protected)
 export const logoutAll = asyncWrapper(async (req, res) => {
   await authService.logoutAll({ userId: req.user.userId });
 

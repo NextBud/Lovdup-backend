@@ -3,13 +3,14 @@ import cors from "cors";
 import "../events/index.js";
 
 import authRoutes from "../modules/auth/auth.routes.js";
-// import onboardingRoutes from "../routes/onboardingRoutes.js";
-import errorMiddleware from "../middlewares/errorMiddleware.js";
+import onboardingRouter from "../modules/onboarding/onboarding.routes.js";
+import { errorMiddleware } from "../middlewares/errorMiddleware.js";
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
+app.set("trust proxy", 1);
 
 // Root endpoint for health checks
 app.get("/", (req, res) => {
@@ -21,7 +22,7 @@ app.get("/", (req, res) => {
 
 // Version 1 Routes
 app.use("/api/v1/auth", authRoutes);
-// app.use("/api/v1/onboarding", onboardingRoutes);
+app.use("/api/v1/onboarding", onboardingRouter);
 
 app.use(errorMiddleware);
 

@@ -7,26 +7,24 @@ export const mergeCompletedSections = (
 
 export const appendDraftArray = (draftData = {}, field, values = []) => {
   const existing = draftData[field] || [];
-
-  return {
-    ...draftData,
-    [field]: [...existing, ...values],
-  };
+  return { ...draftData, [field]: [...existing, ...values] };
 };
 
 export const sanitizeDraftData = (draftData = {}) => {
   const sanitized = { ...draftData };
-
   delete sanitized.password;
   delete sanitized.confirmPassword;
   delete sanitized.passwordHash;
-
   return sanitized;
 };
 
 /**
  * Splits a flat completeOnboarding payload into the shaped sub-objects
- * each Prisma sub-model expects. Keeps the service layer clean.
+ * each Prisma sub-model expects.
+ *
+ * Field names aligned with the frontend store and onboardingPayload.ts:
+ *   communicationStyle  (was personalCommStyle)
+ *   tuesdayVibe         (was personalTuesdayVibe)
  */
 export const extractProfilePayloads = (payload) => {
   const identity = {
@@ -56,8 +54,8 @@ export const extractProfilePayloads = (payload) => {
     religion: payload.religion,
     religionImportance: payload.religionImportance,
     childrenPreference: payload.childrenPreference,
-    personalCommStyle: payload.personalCommStyle,
-    personalTuesdayVibe: payload.personalTuesdayVibe,
+    communicationStyle: payload.communicationStyle, // was personalCommStyle
+    tuesdayVibe: payload.tuesdayVibe, // was personalTuesdayVibe
   };
 
   const narrative = {

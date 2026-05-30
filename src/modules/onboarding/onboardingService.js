@@ -1,36 +1,15 @@
 import prisma from "../../config/prisma.js";
 import * as onboardingDb from "./onboardingDbService.js";
 import { extractProfilePayloads } from "./onboarding.helpers.js";
+import { getStepIndex } from "./onboarding.steps.js";
 import { ONBOARDING_STATUS } from "./onboarding.constants.js";
-import { computeOnboardingState } from "./onboardingStateMachine.js";
 import { validateStepCompletion } from "./onboarding.guards.js";
 import {
-  NotFoundError,
+  NotFoundException,
   BadRequestError,
-  ConflictError,
+  ConflictException,
 } from "../../classes/errorClasses.js";
-import {
-  completeOnboardingSchema,
-  saveOnboardingProgressSchema,
-} from "./onboardingValidator.js";
-
-
-const canCompleteOnboarding = (progress, media) => {
-  const photos = media.filter((m) => m.mediaType === "image");
-  const voices = media.filter((m) => m.mediaType === "audio");
-
-  const photoStep = ONBOARDING_STEP_REGISTRY.photos;
-  const voiceStep = ONBOARDING_STEP_REGISTRY.voice_recording;
-
-  return (
-    validateStepCompletion("photos", {
-      photos,
-    }) &&
-    validateStepCompletion("voice_recording", {
-      voiceAnswers: voices,
-    })
-  );
-};
+import { completeOnboardingSchema } from "./onboardingValidator.js";
 
 // ─────────────────────────────────────────────
 // GET
@@ -39,13 +18,19 @@ const canCompleteOnboarding = (progress, media) => {
 export const getMyOnboarding = async (userId) => {
   const progress = await onboardingDb.findProgressByUserId(userId);
 
-  // Return a shell even if they haven't started — frontend needs something
   if (!progress) {
     return {
       status: ONBOARDING_STATUS.NOT_STARTED,
       currentStep: 1,
+      currentStepId: "name",
       completedSections: [],
-      draftData: {},
+      // draftData shape matches what onboardingHydrationService.hydrate() reads:
+      // draft.profile, draft.completedSteps, draft.currentStepId
+      draftData: {
+        profile: {},
+        completedSteps: [],
+        currentStepId: "name",
+      },
     };
   }
 
@@ -53,59 +38,71 @@ export const getMyOnboarding = async (userId) => {
 };
 
 // ─────────────────────────────────────────────
-// SAVE PROGRESS (autosave per section)
+// SAVE PROGRESS (autosave)
+// Frontend sends: { stepId: string, data: { profile, completedSteps, currentStepId } }
 // ─────────────────────────────────────────────
 
 export const saveProgress = async ({ userId, stepId, data }) => {
-  const progress = await prisma.onboardingProgress.findUnique({
-    where: { userId },
-  });
 
-   await logOnboardingEvent({
-     userId,
-     eventType: "SAVE_PROGRESS_ATTEMPT",
-     stepId,
-     metadata: { keys: Object.keys(data) },
+ let progress = await prisma.onboardingProgress.findUnique({
+   where: { userId },
+ });
+
+ if (!progress) {
+   progress = await prisma.onboardingProgress.create({
+     data: {
+       userId,
+       status: ONBOARDING_STATUS.IN_PROGRESS,
+       currentStep: 1,
+       completedSections: [],
+       draftData: {
+         profile: {},
+         completedSteps: [],
+         currentStepId: "name",
+       },
+     },
    });
+ }
 
   const updatedDraft = {
     ...progress.draftData,
     ...data,
   };
 
-  // 🔥 NEW: enforce registry correctness
-  const isValidStep = validateStepCompletion(stepId, updatedDraft);
+  const isValidStep = validateStepCompletion(
+    stepId,
+    updatedDraft?.profile ?? updatedDraft,
+  );
 
-   await logOnboardingEvent({
-     userId,
-     eventType: "SAVE_PROGRESS_SUCCESS",
-     stepId,
-   });
+  let nextStepIndex;
+  try {
+    nextStepIndex = getStepIndex(stepId);
+  } catch {
+    // Unknown stepId — don't advance currentStep but still save draft
+    nextStepIndex = progress.currentStep;
+  }
 
   return prisma.onboardingProgress.update({
     where: { userId },
     data: {
       draftData: updatedDraft,
+      status: ONBOARDING_STATUS.IN_PROGRESS,
       currentStep: isValidStep
-        ? Math.max(progress.currentStep, getStepIndex(stepId))
+        ? Math.max(progress.currentStep, nextStepIndex)
         : progress.currentStep,
     },
   });
 };
 
+// Keep saveDraft as an alias — some internal callers may use it
+export const saveDraft = saveProgress;
+
 // ─────────────────────────────────────────────
 // COMPLETE ONBOARDING
-// The big one. Validates payload, then runs a single transaction that:
-//   1. Guards against double-completion
-//   2. Creates Profile + all 4 sub-models
-//   3. Promotes staged OnboardingMedia → ProfilePhoto + VoiceAnswer
-//   4. Creates Wallet (every user gets one on completion)
-//   5. Marks OnboardingProgress as COMPLETED and clears draft
-//   6. Marks User.onboardingCompleted (via Profile)
 // ─────────────────────────────────────────────
 
 export const completeOnboarding = async (userId, payload) => {
-  // 1. Validate the submission
+  // 1. Validate payload
   const { error, value } = completeOnboardingSchema.validate(payload, {
     abortEarly: false,
     stripUnknown: true,
@@ -115,66 +112,48 @@ export const completeOnboarding = async (userId, payload) => {
     throw new BadRequestError(error.details.map((d) => d.message).join(", "));
   }
 
-  // 2. Guard: must have progress row in a startable state
+  // 2. Guard: must have a progress row
   const progress = await onboardingDb.findProgressByUserId(userId);
 
   if (!progress) {
-    throw new NotFoundError("No onboarding session found. Start from step 1.");
+    throw new NotFoundException("No onboarding session found. Start from step 1.");
   }
 
   if (progress.status === ONBOARDING_STATUS.COMPLETED) {
-    throw new ConflictError("Onboarding already completed.");
+    throw new ConflictException("Onboarding already completed.");
   }
 
-  await logOnboardingEvent({
-    userId,
-    eventType: "COMPLETE_ONBOARDING_ATTEMPT",
-    stepId: null,
-    metadata: { keys: Object.keys(payload) },
-  });
-
-  // 3. The transaction
+  // 3. Transaction
   return prisma.$transaction(async (tx) => {
-    // Pull staged media uploaded during steps 18-23
     const stagedMedia = await onboardingDb.findOnboardingMediaByUserId(
       userId,
       tx,
     );
-    
+
     const stagedPhotos = stagedMedia
-    .filter((m) => m.mediaType === "image")
-    .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
-    
+      .filter((m) => m.mediaType === "image")
+      .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+
     const stagedVoices = stagedMedia.filter((m) => m.mediaType === "audio");
-    
-    // Validate media minimums inside the transaction (so we have the latest data)
+
     if (stagedPhotos.length < 2) {
-      throw new BadRequestError(
-        "At least 2 photos are required to complete onboarding.",
-      );
-    }
-    
-    if (stagedVoices.length < 5) {
-      throw new BadRequestError(
-        "All 5 voice recordings are required to complete onboarding.",
-      );
-    }
-    
-    if (!canCompleteOnboarding(progress, stagedMedia)) {
-      throw new BadRequestError("Onboarding requirements not satisfied.");
+      throw new BadRequestError("At least 2 photos are required.");
     }
 
-    // Split flat payload into sub-model shapes
+    if (stagedVoices.length < 5) {
+      throw new BadRequestError("All 5 voice recordings are required.");
+    }
+
+    // Split payload into sub-model shapes
     const { identity, lifestyle, values, narrative } =
       extractProfilePayloads(value);
 
-    // Create Profile (the parent of everything)
+    // Create Profile + sub-models
     const profile = await tx.profile.create({
       data: {
         userId,
         onboardingCompleted: true,
         completedAt: new Date(),
-        // Sub-models created via nested writes
         identity: { create: identity },
         lifestyle: { create: lifestyle },
         values: { create: values },
@@ -197,7 +176,6 @@ export const completeOnboarding = async (userId, payload) => {
     });
 
     // Promote staged voices → VoiceAnswer
-    // promptId was stored on the staged record when the user uploaded
     await tx.voiceAnswer.createMany({
       data: stagedVoices.map((voice) => ({
         userId,
@@ -210,17 +188,17 @@ export const completeOnboarding = async (userId, payload) => {
       })),
     });
 
-    // Create Wallet (every completed user gets one with 0 balance)
+    // Create Wallet
     await tx.wallet.upsert({
       where: { userId },
       update: {},
       create: { userId, balance: 0 },
     });
 
-    // Clean up staged media — no longer needed
+    // Clean up staged media
     await onboardingDb.deleteOnboardingMediaByUserId(userId, tx);
 
-    // Mark onboarding complete
+    // Mark complete
     await onboardingDb.markCompleted(userId, tx);
 
     return {
@@ -231,16 +209,15 @@ export const completeOnboarding = async (userId, payload) => {
 };
 
 // ─────────────────────────────────────────────
-// RESET (dev/admin use — wipes progress and staged media)
+// RESET
 // ─────────────────────────────────────────────
 
 export const resetOnboarding = async (userId) => {
   return prisma.$transaction(async (tx) => {
-    // Only allow reset if not already completed
     const progress = await onboardingDb.findProgressByUserId(userId, tx);
 
     if (progress?.status === ONBOARDING_STATUS.COMPLETED) {
-      throw new ConflictError("Cannot reset a completed onboarding.");
+      throw new ConflictException("Cannot reset a completed onboarding.");
     }
 
     await onboardingDb.deleteOnboardingMediaByUserId(userId, tx);
@@ -250,6 +227,11 @@ export const resetOnboarding = async (userId) => {
   });
 };
 
+// ─────────────────────────────────────────────
+// GET STATE (for hydration)
+// Shape matches what onboardingHydrationService.hydrate() reads
+// ─────────────────────────────────────────────
+
 export const getMyOnboardingState = async (userId) => {
   const progress = await onboardingDb.findProgressByUserId(userId);
 
@@ -257,16 +239,19 @@ export const getMyOnboardingState = async (userId) => {
     return {
       status: ONBOARDING_STATUS.NOT_STARTED,
       currentStep: 1,
-      maxReachedStep: 1,
+      currentStepId: "name",
       completedSections: [],
-      draftData: {},
+      draftData: {
+        profile: {},
+        completedSteps: [],
+        currentStepId: "name",
+      },
     };
   }
 
   return {
     status: progress.status,
     currentStep: progress.currentStep,
-    maxReachedStep: progress.maxReachedStep,
     completedSections: progress.completedSections,
     draftData: progress.draftData,
   };

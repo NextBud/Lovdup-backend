@@ -1,5 +1,5 @@
 import cloudinary from "../config/cloudinary.js";
-import { BadRequestError } from "../lib/classes/errorClasses.js";
+import { BadRequestError } from "../classes/errorClasses.js";
 
 const uploadBufferToCloudinary = (file, folder, resourceType = "auto") => {
   return new Promise((resolve, reject) => {

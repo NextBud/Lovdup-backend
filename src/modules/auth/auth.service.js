@@ -1,32 +1,33 @@
 /**
  * auth.service.js
  *
- * All authentication business logic lives here.
  * Two entry points:
  *   - authenticateWithPassword (email/password, LOGIN or REGISTER mode)
  *   - authenticateWithFirebase  (Google / Apple / Phone via Firebase idToken)
  *
- * On every new user creation (either path), we:
+ * On every new user creation (either path):
  *   1. Create the User record
  *   2. Bootstrap an OnboardingProgress row (NOT_STARTED)
  *   3. Create a Session and return tokens
  *
- * Wallet creation is intentionally deferred to completeOnboarding.
- * A wallet for an incomplete profile serves no purpose.
+ * Wallet creation is deferred to completeOnboarding.
+ * onboardingStep is intentionally excluded from AuthResponse —
+ * step position is restored via onboardingHydrationService.hydrate()
+ * which reads currentStepId (string) from the draft, not a step number.
  */
 
 import prisma from "../../config/prisma.js";
 import * as userDb from "../../services/user/userDbService.js";
 import * as onboardingDb from "../onboarding/onboardingDbService.js";
-import admin from "../../config/firebaseAdmin.js";
+import { firebaseAuth } from "../../config/firebaseAdmin.js"; // ← fixed: was admin default import
 import { comparePassword, hashPassword } from "../../lib/password.js";
 import { signAccessToken } from "../../lib/token.js";
 import { generateRefreshToken, hashToken } from "../../lib/sessionTokens.js";
 import {
   UnauthorizedException,
   ConflictException,
-  BadRequestException,
-} from "../../lib/classes/errorClasses.js";
+  BadRequestError,
+} from "../../classes/errorClasses.js";
 import {
   ONBOARDING_STATUS,
   CURRENT_DRAFT_VERSION,
@@ -47,26 +48,24 @@ const createSession = async ({ user, tx, meta = {} }) => {
   const session = await tx.authSession.create({
     data: {
       userId: user.id,
-      refreshToken: refreshTokenHash, // stored as hash, never raw
+      refreshToken: refreshTokenHash,
       userAgent: meta.userAgent ?? null,
       ipAddress: meta.ip ?? null,
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
     },
   });
 
-  // sessionId embedded in token so we can revoke individual sessions
   const accessToken = signAccessToken(user, session.id);
 
   return {
     accessToken,
-    refreshToken, // raw token returned to client, hash stays in DB
+    refreshToken, // raw token to client — hash stays in DB
     sessionId: session.id,
   };
 };
 
 /**
- * Creates the OnboardingProgress row for a brand new user.
- * Status starts as NOT_STARTED — the user hasn't touched step 1 yet.
+ * Bootstraps an OnboardingProgress row for a brand new user.
  * Must be called inside a transaction.
  */
 const bootstrapNewUser = async ({ userId, tx }) => {
@@ -83,8 +82,12 @@ const bootstrapNewUser = async ({ userId, tx }) => {
 };
 
 /**
- * Shapes the auth response the frontend receives.
- * Includes onboardingStatus so the app knows where to route the user.
+ * Builds the auth response the frontend receives.
+ * Shape must match AuthResponse in auth.types.ts:
+ * { user, accessToken, refreshToken, sessionId, onboardingStatus }
+ *
+ * onboardingStep is intentionally omitted — the frontend restores
+ * step position via hydration (string step IDs), not a step number.
  */
 const buildAuthResponse = async ({ user, tokens }) => {
   const onboarding = await onboardingDb.findProgressByUserId(user.id);
@@ -96,13 +99,12 @@ const buildAuthResponse = async ({ user, tokens }) => {
       role: user.role,
     },
     onboardingStatus: onboarding?.status ?? ONBOARDING_STATUS.NOT_STARTED,
-    onboardingStep: onboarding?.currentStep ?? 1,
-    ...tokens,
+    ...tokens, // accessToken, refreshToken, sessionId
   };
 };
 
 // ─────────────────────────────────────────────
-// PASSWORD AUTH  (email + password)
+// PASSWORD AUTH
 // ─────────────────────────────────────────────
 
 export const authenticateWithPassword = async ({
@@ -112,15 +114,14 @@ export const authenticateWithPassword = async ({
   meta,
 }) => {
   if (!email || !password || !mode) {
-    throw new BadRequestException("email, password and mode are required.");
+    throw new BadRequestError("email, password and mode are required.");
   }
 
   if (!["LOGIN", "REGISTER"].includes(mode)) {
-    throw new BadRequestException("mode must be LOGIN or REGISTER.");
+    throw new BadRequestError("mode must be LOGIN or REGISTER.");
   }
 
   const existingUser = await userDb.findUserByEmail(email);
-
   let user = existingUser;
 
   // ── REGISTER ──────────────────────────────
@@ -137,10 +138,7 @@ export const authenticateWithPassword = async ({
           email,
           passwordHash,
           authProviders: {
-            create: {
-              provider: "LOCAL",
-              providerUid: email,
-            },
+            create: { provider: "LOCAL", providerUid: email },
           },
         },
         tx,
@@ -159,7 +157,6 @@ export const authenticateWithPassword = async ({
     }
 
     if (!user.passwordHash) {
-      // Account exists but was created via social — no password set
       throw new UnauthorizedException(
         "This account uses social login. Please sign in with Google or Apple.",
       );
@@ -172,33 +169,35 @@ export const authenticateWithPassword = async ({
     }
   }
 
-  // ── SHARED (both modes) ───────────────────
+  // ── SHARED ────────────────────────────────
   if (user.status !== "ACTIVE") {
     throw new UnauthorizedException("This account is not active.");
   }
 
   await userDb.updateLastLogin(user.id);
 
-  const tokens = await prisma.$transaction(async (tx) => {
-    return createSession({ user, tx, meta });
-  });
+  const tokens = await prisma.$transaction(async (tx) =>
+    createSession({ user, tx, meta }),
+  );
 
   return buildAuthResponse({ user, tokens });
 };
 
 // ─────────────────────────────────────────────
-// FIREBASE AUTH  (Google / Apple / Phone)
+// FIREBASE AUTH
 // ─────────────────────────────────────────────
 
 export const authenticateWithFirebase = async ({ idToken, meta }) => {
   if (!idToken) {
-    throw new BadRequestException("idToken is required.");
+    throw new BadRequestError("idToken is required.");
   }
 
   let decoded;
 
   try {
-    decoded = await admin.auth().verifyIdToken(idToken);
+    // Fixed: was admin.auth().verifyIdToken() — admin is not the default export.
+    // firebaseAuth is the pre-instantiated auth singleton from firebaseAdmin.js.
+    decoded = await firebaseAuth.verifyIdToken(idToken);
   } catch {
     throw new UnauthorizedException("Firebase token is invalid or expired.");
   }
@@ -209,21 +208,18 @@ export const authenticateWithFirebase = async ({ idToken, meta }) => {
   let user = await prisma.authProvider
     .findUnique({
       where: {
-        provider_providerUid: {
-          provider: "FIREBASE",
-          providerUid: uid,
-        },
+        provider_providerUid: { provider: "FIREBASE", providerUid: uid },
       },
       include: { user: true },
     })
     .then((r) => r?.user ?? null);
 
-  // Fall back to email match (user may have registered with password first)
+  // Fallback to email match (user may have registered with password first)
   if (!user && email) {
     user = await userDb.findUserByEmail(email);
   }
 
-  // ── NEW USER via Firebase ──────────────────
+  // ── NEW USER ──────────────────────────────
   if (!user) {
     user = await prisma.$transaction(async (tx) => {
       const created = await userDb.createUser(
@@ -232,10 +228,7 @@ export const authenticateWithFirebase = async ({ idToken, meta }) => {
           phone: phone ?? null,
           emailVerified: !!email_verified,
           authProviders: {
-            create: {
-              provider: "FIREBASE",
-              providerUid: uid,
-            },
+            create: { provider: "FIREBASE", providerUid: uid },
           },
         },
         tx,
@@ -246,20 +239,13 @@ export const authenticateWithFirebase = async ({ idToken, meta }) => {
       return created;
     });
   } else {
-    // ── EXISTING USER — link Firebase provider if not already linked ──
+    // ── EXISTING USER — ensure provider is linked ──
     await prisma.authProvider.upsert({
       where: {
-        provider_providerUid: {
-          provider: "FIREBASE",
-          providerUid: uid,
-        },
+        provider_providerUid: { provider: "FIREBASE", providerUid: uid },
       },
       update: { userId: user.id },
-      create: {
-        userId: user.id,
-        provider: "FIREBASE",
-        providerUid: uid,
-      },
+      create: { userId: user.id, provider: "FIREBASE", providerUid: uid },
     });
   }
 
@@ -269,12 +255,16 @@ export const authenticateWithFirebase = async ({ idToken, meta }) => {
 
   await userDb.updateLastLogin(user.id);
 
-  const tokens = await prisma.$transaction(async (tx) => {
-    return createSession({ user, tx, meta });
-  });
+  const tokens = await prisma.$transaction(async (tx) =>
+    createSession({ user, tx, meta }),
+  );
 
   return buildAuthResponse({ user, tokens });
 };
+
+// ─────────────────────────────────────────────
+// GET ME
+// ─────────────────────────────────────────────
 
 export const getMe = async ({ userId, sessionId }) => {
   const session = await prisma.authSession.findFirst({
@@ -302,6 +292,8 @@ export const getMe = async ({ userId, sessionId }) => {
     throw new UnauthorizedException("User not found.");
   }
 
+  // Shape matches what authProvider.tsx reads:
+  // data.user, data.onboarding.status
   return {
     user: {
       id: user.id,
@@ -314,7 +306,7 @@ export const getMe = async ({ userId, sessionId }) => {
       valid: true,
     },
     onboarding: {
-      status: user.onboardingProgress?.status ?? "NOT_STARTED",
+      status: user.onboardingProgress?.status ?? ONBOARDING_STATUS.NOT_STARTED,
       currentStep: user.onboardingProgress?.currentStep ?? 1,
     },
     profile: {
@@ -338,8 +330,8 @@ export const refreshSession = async ({ refreshToken }) => {
   const session = await prisma.authSession.findFirst({
     where: {
       refreshToken: tokenHash,
-      revokedAt: null, // not revoked
-      expiresAt: { gt: new Date() }, // not expired
+      revokedAt: null,
+      expiresAt: { gt: new Date() },
     },
     include: { user: true },
   });
@@ -354,16 +346,13 @@ export const refreshSession = async ({ refreshToken }) => {
     throw new UnauthorizedException("This account is not active.");
   }
 
-  // Rotate refresh token (old one is replaced, never reusable)
+  // Rotate refresh token — old one is invalidated immediately
   const newRefreshToken = generateRefreshToken();
   const newHash = hashToken(newRefreshToken);
 
   await prisma.authSession.update({
     where: { id: session.id },
-    data: {
-      refreshToken: newHash,
-      updatedAt: new Date(),
-    },
+    data: { refreshToken: newHash, updatedAt: new Date() },
   });
 
   const accessToken = signAccessToken(session.user, session.id);
@@ -380,14 +369,12 @@ export const refreshSession = async ({ refreshToken }) => {
 // ─────────────────────────────────────────────
 
 export const logout = async ({ userId, sessionId }) => {
-  // Revoke only the current session (not all devices)
   const session = await prisma.authSession.findFirst({
     where: { id: sessionId, userId },
   });
 
   if (!session) {
-    // Already gone — treat as success, don't leak info
-    return { loggedOut: true };
+    return { loggedOut: true }; // already gone — treat as success
   }
 
   await prisma.authSession.update({

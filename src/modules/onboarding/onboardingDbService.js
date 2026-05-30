@@ -38,6 +38,19 @@ export const saveProgress = async (userId, payload, tx = prisma) => {
   });
 };
 
+export const syncCurrentOnboardingState = async () => {
+  const state = useOnboardingStore.getState();
+
+  await saveDraft({
+    stepId: state.currentStepId,
+    data: {
+      profile: state.profile,
+      completedSteps: state.completedSteps,
+      currentStepId: state.currentStepId,
+    },
+  });
+};
+
 export const markCompleted = async (userId, tx = null) => {
   return db(tx).onboardingProgress.update({
     where: { userId },

@@ -1,7 +1,7 @@
 import prisma from "../../config/prisma.js";
-import { processMediaUploads } from "../media/processMediaUploads.js";
+import { processMediaUploads } from "../../middlewares/processMediaUploads.js";
 import * as onboardingDb from "./onboardingDbService.js";
-import { BadRequestError } from "../../lib/classes/errorClasses.js";
+import { BadRequestError } from "../../classes/errorClasses.js";
 import asyncWrapper from "../../lib/asyncWrapper.js";
 import {
   MAX_ONBOARDING_PHOTOS,

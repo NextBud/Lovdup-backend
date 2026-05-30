@@ -1,8 +1,35 @@
-import app from "./src/server/server.js";
-import configService from "./lib/classes/configClass.js";
+import app  from "./src/server/server.js";
+import { env } from "./src/lib/env.js";
+import prisma from "./src/config/prisma.js";
 
-const PORT = configService.get("PORT") || 5000;
+const startServer = async () => {
+  try {
+    await prisma.$connect();
+    console.log("[DB] Database connected");
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+    app.listen(env.port, () => {
+      console.log(`[Server] Running on port ${env.port} (${env.nodeEnv})`);
+    });
+  } catch (error) {
+    console.error("[Server] Failed to start:", error);
+    process.exit(1);
+  }
+};
+
+startServer();
+
+// ── GRACEFUL SHUTDOWN ─────────────────────────
+const shutdown = async (signal) => {
+  console.log(`[Server] ${signal} received — shutting down`);
+  await prisma.$disconnect();
+  process.exit(0);
+};
+
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+
+process.on("uncaughtException", async (err) => {
+  console.error("[Server] Uncaught exception:", err);
+  await prisma.$disconnect();
+  process.exit(1);
 });

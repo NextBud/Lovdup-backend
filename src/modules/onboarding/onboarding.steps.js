@@ -1,3 +1,7 @@
+// Aligned with the frontend step registry (19 steps, single voice_recording).
+// Was 23 steps with voice_recording_1 through _5 — collapsed to one step
+// since the frontend handles all 5 prompts inside a single VoiceRecordingStep.
+
 export const ONBOARDING_STEP_ORDER = [
   "name",
   "birthday",
@@ -16,11 +20,7 @@ export const ONBOARDING_STEP_ORDER = [
   "about_me",
   "auth",
   "voice_questions",
-  "voice_recording_1",
-  "voice_recording_2",
-  "voice_recording_3",
-  "voice_recording_4",
-  "voice_recording_5",
+  "voice_recording", // single step — frontend records all 5 prompts here
   "photos",
 ];
 
@@ -31,5 +31,7 @@ export const getStepIndex = (stepId) => {
     throw new Error(`Invalid onboarding step: ${stepId}`);
   }
 
-  return index + 1;
+  return index + 1; // 1-based
 };
+
+export const TOTAL_STEPS = ONBOARDING_STEP_ORDER.length; // 19

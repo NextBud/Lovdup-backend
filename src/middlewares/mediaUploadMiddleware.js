@@ -6,7 +6,7 @@
  */
 
 import multer from "multer";
-import { BadRequestError } from "../../lib/classes/errorClasses.js";
+import { BadRequestError } from "../classes/errorClasses.js";
 
 const storage = multer.memoryStorage();
 

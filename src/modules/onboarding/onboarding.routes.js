@@ -1,8 +1,8 @@
 import { Router } from "express";
-import { protect } from "../../middleware/auth.middleware.js";
+import { authMiddleware } from "../../middlewares/authMiddleware.js";
 import {
   getMyOnboarding,
-  saveProgress,
+  saveDraft,
   completeOnboarding,
   resetOnboarding,
 } from "./onboardingController.js";
@@ -13,29 +13,26 @@ import {
 import {
   handleOnboardingPhotoUpload,
   handleOnboardingVoiceUpload,
-} from "../media/mediaUploadMiddleware.js";
+} from "../../middlewares/mediaUploadMiddleware.js";
 
-const router = Router();
-
-// All onboarding routes require an authenticated user
-router.use(protect);
+const onboardingRouter = Router();
 
 // Progress
-router.get("/", getMyOnboarding);
-router.post("/progress", saveProgress);
-router.post("/complete", completeOnboarding);
-router.post("/reset", resetOnboarding);
+onboardingRouter.get("/", getMyOnboarding);
+onboardingRouter.post("/draft", saveDraft);
+onboardingRouter.post("/complete", completeOnboarding);
+onboardingRouter.post("/reset", resetOnboarding);
 
 // Media — multer middleware runs before the controller
-router.post(
+onboardingRouter.post(
   "/media/photos",
   handleOnboardingPhotoUpload,
   uploadOnboardingPhotos,
 );
-router.post(
+onboardingRouter.post(
   "/media/voices",
   handleOnboardingVoiceUpload,
   uploadOnboardingVoices,
 );
 
-export default router;
+export default onboardingRouter;
