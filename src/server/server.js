@@ -12,6 +12,8 @@ app.use(cors());
 app.use(express.json());
 app.set("trust proxy", 1);
 
+app.use(errorMiddleware);
+
 // Root endpoint for health checks
 app.get("/", (req, res) => {
   res.status(200).json({
@@ -24,6 +26,5 @@ app.get("/", (req, res) => {
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/onboarding", onboardingRouter);
 
-app.use(errorMiddleware);
 
 export default app;

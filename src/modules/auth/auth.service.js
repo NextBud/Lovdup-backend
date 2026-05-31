@@ -45,13 +45,13 @@ const createSession = async ({ user, tx, meta = {} }) => {
   const refreshToken = generateRefreshToken();
   const refreshTokenHash = hashToken(refreshToken);
 
-  const session = await tx.authSession.create({
+  const session = await tx.refreshSession.create({
     data: {
       userId: user.id,
-      refreshToken: refreshTokenHash,
+      refreshTokenHash,
       userAgent: meta.userAgent ?? null,
       ipAddress: meta.ip ?? null,
-      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     },
   });
 
@@ -59,7 +59,7 @@ const createSession = async ({ user, tx, meta = {} }) => {
 
   return {
     accessToken,
-    refreshToken, // raw token to client — hash stays in DB
+    refreshToken,
     sessionId: session.id,
   };
 };
@@ -267,12 +267,15 @@ export const authenticateWithFirebase = async ({ idToken, meta }) => {
 // ─────────────────────────────────────────────
 
 export const getMe = async ({ userId, sessionId }) => {
-  const session = await prisma.authSession.findFirst({
+  const session = await prisma.refreshSession.findFirst({
     where: {
       id: sessionId,
       userId,
+      isRevoked: false,
       revokedAt: null,
-      expiresAt: { gt: new Date() },
+      expiresAt: {
+        gt: new Date(),
+      },
     },
   });
 
@@ -281,7 +284,9 @@ export const getMe = async ({ userId, sessionId }) => {
   }
 
   const user = await prisma.user.findUnique({
-    where: { id: userId },
+    where: {
+      id: userId,
+    },
     include: {
       profile: true,
       onboardingProgress: true,
@@ -292,8 +297,6 @@ export const getMe = async ({ userId, sessionId }) => {
     throw new UnauthorizedException("User not found.");
   }
 
-  // Shape matches what authProvider.tsx reads:
-  // data.user, data.onboarding.status
   return {
     user: {
       id: user.id,
@@ -315,25 +318,29 @@ export const getMe = async ({ userId, sessionId }) => {
     },
   };
 };
-
 // ─────────────────────────────────────────────
 // REFRESH SESSION
 // ─────────────────────────────────────────────
 
 export const refreshSession = async ({ refreshToken }) => {
   if (!refreshToken) {
-    throw new BadRequestException("Refresh token is required.");
+    throw new BadRequestError("Refresh token is required.");
   }
 
-  const tokenHash = hashToken(refreshToken);
+  const refreshTokenHash = hashToken(refreshToken);
 
-  const session = await prisma.authSession.findFirst({
+  const session = await prisma.refreshSession.findFirst({
     where: {
-      refreshToken: tokenHash,
+      refreshTokenHash,
+      isRevoked: false,
       revokedAt: null,
-      expiresAt: { gt: new Date() },
+      expiresAt: {
+        gt: new Date(),
+      },
     },
-    include: { user: true },
+    include: {
+      user: true,
+    },
   });
 
   if (!session) {
@@ -346,13 +353,20 @@ export const refreshSession = async ({ refreshToken }) => {
     throw new UnauthorizedException("This account is not active.");
   }
 
-  // Rotate refresh token — old one is invalidated immediately
   const newRefreshToken = generateRefreshToken();
-  const newHash = hashToken(newRefreshToken);
+  const newRefreshTokenHash = hashToken(newRefreshToken);
 
-  await prisma.authSession.update({
-    where: { id: session.id },
-    data: { refreshToken: newHash, updatedAt: new Date() },
+  await prisma.refreshSession.update({
+    where: {
+      id: session.id,
+    },
+    data: {
+      refreshTokenHash: newRefreshTokenHash,
+      rotationCount: {
+        increment: 1,
+      },
+      lastUsedAt: new Date(),
+    },
   });
 
   const accessToken = signAccessToken(session.user, session.id);
@@ -363,26 +377,37 @@ export const refreshSession = async ({ refreshToken }) => {
     sessionId: session.id,
   };
 };
-
 // ─────────────────────────────────────────────
 // LOGOUT
 // ─────────────────────────────────────────────
 
 export const logout = async ({ userId, sessionId }) => {
-  const session = await prisma.authSession.findFirst({
-    where: { id: sessionId, userId },
+  const session = await prisma.refreshSession.findFirst({
+    where: {
+      id: sessionId,
+      userId,
+    },
   });
 
   if (!session) {
-    return { loggedOut: true }; // already gone — treat as success
+    return {
+      loggedOut: true,
+    };
   }
 
-  await prisma.authSession.update({
-    where: { id: sessionId },
-    data: { revokedAt: new Date() },
+  await prisma.refreshSession.update({
+    where: {
+      id: sessionId,
+    },
+    data: {
+      isRevoked: true,
+      revokedAt: new Date(),
+    },
   });
 
-  return { loggedOut: true };
+  return {
+    loggedOut: true,
+  };
 };
 
 // ─────────────────────────────────────────────
@@ -390,10 +415,18 @@ export const logout = async ({ userId, sessionId }) => {
 // ─────────────────────────────────────────────
 
 export const logoutAll = async ({ userId }) => {
-  await prisma.authSession.updateMany({
-    where: { userId, revokedAt: null },
-    data: { revokedAt: new Date() },
+  await prisma.refreshSession.updateMany({
+    where: {
+      userId,
+      isRevoked: false,
+    },
+    data: {
+      isRevoked: true,
+      revokedAt: new Date(),
+    },
   });
 
-  return { loggedOut: true };
+  return {
+    loggedOut: true,
+  };
 };

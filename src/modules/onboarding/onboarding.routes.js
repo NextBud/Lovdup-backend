@@ -17,6 +17,8 @@ import {
 
 const onboardingRouter = Router();
 
+onboardingRouter.use(authMiddleware); // All routes require authentication
+
 // Progress
 onboardingRouter.get("/", getMyOnboarding);
 onboardingRouter.post("/draft", saveDraft);
