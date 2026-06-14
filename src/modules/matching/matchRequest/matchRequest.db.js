@@ -2,23 +2,17 @@ import prisma from "../../../config/prisma.js";
 
 const dbClient = (trx) => trx || prisma;
 
-export const findUserById = async (userId, trx = null) => {
-  const db = dbClient(trx);
+export const withTransaction = (fn) => prisma.$transaction(fn);
 
-  return db.user.findUnique({
+export const findUserById = async (userId, trx = null) => {
+  return dbClient(trx).user.findUnique({
     where: { id: userId },
     select: {
       id: true,
       status: true,
       isActive: true,
       isSuspended: true,
-      profile: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-        },
-      },
+      profile: { select: { id: true, firstName: true, lastName: true } },
     },
   });
 };
@@ -28,30 +22,17 @@ export const findRequestBetweenUsers = async ({
   receiverId,
   trx = null,
 }) => {
-  const db = dbClient(trx);
-
-  return db.matchRequest.findUnique({
-    where: {
-      senderId_receiverId: {
-        senderId,
-        receiverId,
-      },
-    },
+  return dbClient(trx).matchRequest.findUnique({
+    where: { senderId_receiverId: { senderId, receiverId } },
   });
 };
 
 export const createRequest = async (payload, trx = null) => {
-  const db = dbClient(trx);
-
-  return db.matchRequest.create({
-    data: payload,
-  });
+  return dbClient(trx).matchRequest.create({ data: payload });
 };
 
 export const findById = async (requestId, trx = null) => {
-  const db = dbClient(trx);
-
-  return db.matchRequest.findUnique({
+  return dbClient(trx).matchRequest.findUnique({
     where: { id: requestId },
     include: {
       sender: {
@@ -84,21 +65,14 @@ export const updateStatus = async ({
   respondedAt = new Date(),
   trx = null,
 }) => {
-  const db = dbClient(trx);
-
-  return db.matchRequest.update({
+  return dbClient(trx).matchRequest.update({
     where: { id: requestId },
-    data: {
-      status,
-      respondedAt,
-    },
+    data: { status, respondedAt },
   });
 };
 
 export const findSentRequests = async ({ userId, trx = null }) => {
-  const db = dbClient(trx);
-
-  return db.matchRequest.findMany({
+  return dbClient(trx).matchRequest.findMany({
     where: { senderId: userId },
     orderBy: { createdAt: "desc" },
     include: {
@@ -117,9 +91,7 @@ export const findSentRequests = async ({ userId, trx = null }) => {
 };
 
 export const findReceivedRequests = async ({ userId, trx = null }) => {
-  const db = dbClient(trx);
-
-  return db.matchRequest.findMany({
+  return dbClient(trx).matchRequest.findMany({
     where: { receiverId: userId },
     orderBy: { createdAt: "desc" },
     include: {
@@ -134,5 +106,67 @@ export const findReceivedRequests = async ({ userId, trx = null }) => {
         },
       },
     },
+  });
+};
+
+// ---------------------------------------------------------------------------
+// Composite transactional operations
+// ---------------------------------------------------------------------------
+
+export const createRequestWithAutoMatch = async ({
+  senderId,
+  receiverId,
+  requestPayload,
+  reverseRequestId, // pass if a reverse PENDING request exists
+  debitCoins, // async fn(trx) — wallet debit, injected from service
+  createMatch, // async fn({ userAId, userBId }, trx) — injected from matchDb
+  normalizePair, // fn(a, b) => [a, b] sorted
+}) => {
+  return prisma.$transaction(async (trx) => {
+    await debitCoins(trx);
+
+    const createdRequest = await createRequest(requestPayload, trx);
+
+    let match = null;
+
+    if (reverseRequestId) {
+      await updateStatus({
+        requestId: reverseRequestId,
+        status: "ACCEPTED",
+        trx,
+      });
+      await updateStatus({
+        requestId: createdRequest.id,
+        status: "ACCEPTED",
+        trx,
+      });
+
+      const [userAId, userBId] = normalizePair(senderId, receiverId);
+      match = await createMatch({ userAId, userBId }, trx);
+    }
+
+    return { createdRequest, match };
+  });
+};
+
+export const respondToRequest = async ({
+  requestId,
+  status,
+  createMatch, // async fn({ userAId, userBId }, trx)
+  normalizePair, // fn(a, b) => [a, b] sorted
+  senderId,
+  receiverId,
+}) => {
+  return prisma.$transaction(async (trx) => {
+    const handledRequest = await updateStatus({ requestId, status, trx });
+
+    let match = null;
+
+    if (status === "ACCEPTED") {
+      const [userAId, userBId] = normalizePair(senderId, receiverId);
+      match = await createMatch({ userAId, userBId }, trx);
+    }
+
+    return { handledRequest, match };
   });
 };

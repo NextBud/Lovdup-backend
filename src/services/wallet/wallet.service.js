@@ -1,8 +1,8 @@
 import {
   BadRequestError,
   NotFoundException,
-} from "../lib/classes/errorClasses.js";
-import * as walletDb from "./wallet.db.js";
+} from "../../classes/errorClasses.js";
+import * as walletDb from "./walletDbService.js";
 
 export const getOrCreateWallet = async (userId, trx = null) => {
   const existing = await walletDb.findByUserId(userId, trx);

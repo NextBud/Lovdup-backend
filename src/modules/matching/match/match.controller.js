@@ -1,4 +1,4 @@
-import asyncWrapper from "../../lib/asyncWrapper.js";
+import asyncWrapper from "../../../lib/asyncWrapper.js";
 import * as matchService from "./match.service.js";
 
 export const getMyMatches = asyncWrapper(async (req, res) => {

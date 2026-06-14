@@ -1,4 +1,4 @@
-import asyncWrapper from "../../lib/asyncWrapper.js";
+import asyncWrapper from "../../../lib/asyncWrapper.js";
 import * as matchRequestService from "./matchRequest.service.js";
 
 export const createMatchRequest = asyncWrapper(async (req, res) => {

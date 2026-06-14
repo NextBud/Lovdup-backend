@@ -2,7 +2,7 @@ import {
   BadRequestError,
   ForbiddenError,
   NotFoundException,
-} from "../../lib/classes/errorClasses.js";
+} from "../../../classes/errorClasses.js";
 import * as matchDb from "./match.db.js";
 
 const getOtherUserFromMatch = (match, userId) => {

@@ -90,7 +90,7 @@ model OnboardingProgress {
   id                String           @id @default(uuid())
   userId            String           @unique
   status            OnboardingStatus @default(NOT_STARTED)
-  maxReachedStep    Int              @default(1) 
+  maxReachedStep    Int              @default(1)
   currentStep       Int              @default(1)
   completedSections String[]         @default([])
   draftData         Json?
@@ -119,6 +119,10 @@ model OnboardingMedia {
   @@index([mediaType])
 }
 
+// ---------------------------------------------------------------------------
+// Profile — top-level container, no data fields itself
+// ---------------------------------------------------------------------------
+
 model Profile {
   id                     String                @id @default(uuid())
   userId                 String                @unique
@@ -138,6 +142,10 @@ model Profile {
   voiceAnswers           VoiceAnswer[]
 }
 
+// ---------------------------------------------------------------------------
+// ProfileIdentity — who you are
+// ---------------------------------------------------------------------------
+
 model ProfileIdentity {
   id               String   @id @default(uuid())
   profileId        String   @unique
@@ -151,10 +159,18 @@ model ProfileIdentity {
   ethnicity        String?
   languages        String[]
   occupation       String
+  // Added: relationship intent is an identity-level field
+  relationshipIntention String?
+  // Added: education level
+  education        String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
   profile          Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
 }
+
+// ---------------------------------------------------------------------------
+// ProfileLifestyle — how you live
+// ---------------------------------------------------------------------------
 
 model ProfileLifestyle {
   id                 String   @id @default(uuid())
@@ -171,18 +187,28 @@ model ProfileLifestyle {
   profile            Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
 }
 
+// ---------------------------------------------------------------------------
+// ProfileValues — what you believe and want
+// ---------------------------------------------------------------------------
+
 model ProfileValues {
   id                  String   @id @default(uuid())
   profileId           String   @unique
   religion            String
   religionImportance  String
   childrenPreference  String
+  // Added: whether user currently has children (distinct from wanting them)
+  hasChildren         Boolean  @default(false)
   personalCommStyle   String
   personalTuesdayVibe String
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
   profile             Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
 }
+
+// ---------------------------------------------------------------------------
+// ProfileNarrative — your story
+// ---------------------------------------------------------------------------
 
 model ProfileNarrative {
   id        String   @id @default(uuid())
@@ -254,28 +280,52 @@ model VoiceAnswer {
   @@index([voicePromptId])
 }
 
+// ---------------------------------------------------------------------------
+// MatchPreference — what the viewer is looking for
+// ageRange string replaced with ageMin / ageMax integers for query use.
+// ---------------------------------------------------------------------------
+
 model MatchPreference {
   id                           String   @id @default(uuid())
   userId                       String   @unique
-  ageRange                     String
+
+  // Who
   preferredGenders             Gender[]
-  locationPreference           String
-  religionPreference           String
+  // CHANGED: was ageRange String — split into usable integers
+  ageMin                       Int      @default(18)
+  ageMax                       Int      @default(99)
+
+  // Where
+  locationPreference           String   // "Same city" | "Same country" | "Anywhere"
+
+  // Values
+  religionPreference           String   // specific religion or "Open to all"
   culturePreference            String
-  childrenPreference           String
+  childrenPreference           String   // preference for partner's children status
+  faithPractice                String
+
+  // Personality & energy
   energyDescription            String
   communicationStyle           String
   tuesdayFeeling               String
   energyMatchStyle             String
   ambitionImportance           String
-  faithPractice                String
+
+  // Lifestyle
   socialLevel                  String
-  lifestylePreference          String
+  lifestylePreference          String   // preferred drinking/smoking tolerance
+
+  // Financial
   financialStabilityPreference String
   financialStagePreference     String
+
+  // Open-ended intent
   idealPartnerType             String
   matchVoicePrompt             String
+
+  // Minimum score a candidate must reach to be shown
   minCompatibilityScore        Int      @default(50)
+
   createdAt                    DateTime @default(now())
   updatedAt                    DateTime @updatedAt
   user                         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -286,7 +336,8 @@ model CompatibilityScore {
   userAId        String
   userBId        String
   score          Int
-  profileScore   Int           @default(0)
+  // Sub-scores for transparency / debugging
+  identityScore  Int           @default(0)  // was profileScore
   lifestyleScore Int           @default(0)
   valuesScore    Int           @default(0)
   locationScore  Int           @default(0)
@@ -318,6 +369,7 @@ model MatchRequest {
   receiver     User               @relation("ReceivedMatchRequests", fields: [receiverId], references: [id], onDelete: Cascade)
   sender       User               @relation("SentMatchRequests", fields: [senderId], references: [id], onDelete: Cascade)
 
+  @@unique([senderId, receiverId])
   @@index([senderId, receiverId])
   @@index([senderId])
   @@index([receiverId])
@@ -410,6 +462,10 @@ model WalletTransaction {
   @@index([createdAt])
 }
 
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
 enum UserRole {
   USER
   ADMIN
@@ -463,8 +519,9 @@ enum MediaModerationStatus {
 }
 
 enum MatchRequestType {
+  // PASS removed — a pass is the absence of a request, not a request type.
+  // Store passes in a separate MatchPass table if tracking is needed.
   LIKE
-  PASS
   SUPER_LIKE
 }
 

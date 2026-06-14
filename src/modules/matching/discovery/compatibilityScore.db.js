@@ -7,10 +7,7 @@ export const findByUserPair = async ({ userAId, userBId, trx = null }) => {
 
   return db.compatibilityScore.findUnique({
     where: {
-      userAId_userBId: {
-        userAId,
-        userBId,
-      },
+      userAId_userBId: { userAId, userBId },
     },
   });
 };
@@ -20,7 +17,7 @@ export const upsertByUserPair = async (
     userAId,
     userBId,
     score,
-    profileScore = 0,
+    identityScore = 0, // renamed from profileScore
     lifestyleScore = 0,
     valuesScore = 0,
     locationScore = 0,
@@ -32,14 +29,11 @@ export const upsertByUserPair = async (
 
   return db.compatibilityScore.upsert({
     where: {
-      userAId_userBId: {
-        userAId,
-        userBId,
-      },
+      userAId_userBId: { userAId, userBId },
     },
     update: {
       score,
-      profileScore,
+      identityScore,
       lifestyleScore,
       valuesScore,
       locationScore,
@@ -50,7 +44,7 @@ export const upsertByUserPair = async (
       userAId,
       userBId,
       score,
-      profileScore,
+      identityScore,
       lifestyleScore,
       valuesScore,
       locationScore,
