@@ -1,3 +1,4 @@
+// authMiddleware.js
 import { verifyAccessToken } from "../lib/token.js";
 import { UnauthorizedException } from "../classes/errorClasses.js";
 import asyncWrapper from "../lib/asyncWrapper.js";
@@ -24,8 +25,10 @@ export const authMiddleware = asyncWrapper(async (req, res, next) => {
     throw new UnauthorizedException("Invalid token.");
   }
 
+  // ✅ Set both for compatibility
   req.user = {
-    userId: decoded.userId,
+    id: decoded.userId, // ✅ Add id for compatibility
+    userId: decoded.userId, // ✅ Keep userId for existing code
     email: decoded.email,
     role: decoded.role,
     sessionId: decoded.sessionId,
@@ -34,10 +37,6 @@ export const authMiddleware = asyncWrapper(async (req, res, next) => {
   next();
 });
 
-/**
- * Optional: restrict to specific roles.
- * Usage: router.delete("/user/:id", protect, requireRole("ADMIN"), handler)
- */
 export const requireRole = (...roles) =>
   asyncWrapper(async (req, res, next) => {
     if (!roles.includes(req.user.role)) {

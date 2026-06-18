@@ -6,7 +6,8 @@ import * as profileService from "./profileService.js";
  * Returns the authenticated user's full profile with all sub-relations.
  */
 export const getMyProfile = asyncWrapper(async (req, res) => {
-  const profile = await profileService.getMyProfile(req.user.id);
+  const userId = req.user.userId;
+  const profile = await profileService.getMyProfile(userId);  
 
   res.status(200).json({
     success: true,
@@ -22,7 +23,8 @@ export const getMyProfile = asyncWrapper(async (req, res) => {
  * reaching this controller.
  */
 export const upsertIdentity = asyncWrapper(async (req, res) => {
-  const result = await profileService.upsertIdentity(req.user.id, req.body);
+  const userId = req.user.userId;
+  const result = await profileService.upsertIdentity(userId, req.body);
 
   res.status(200).json({
     success: true,
@@ -36,7 +38,8 @@ export const upsertIdentity = asyncWrapper(async (req, res) => {
  * Onboarding steps 8–11: habits, social, money, financial status.
  */
 export const upsertLifestyle = asyncWrapper(async (req, res) => {
-  const result = await profileService.upsertLifestyle(req.user.id, req.body);
+  const userId = req.user.userId;
+  const result = await profileService.upsertLifestyle(userId, req.body);
 
   res.status(200).json({
     success: true,
@@ -50,7 +53,8 @@ export const upsertLifestyle = asyncWrapper(async (req, res) => {
  * Onboarding steps 7, 12–14: faith, children, comm style, tuesday vibe.
  */
 export const upsertValues = asyncWrapper(async (req, res) => {
-  const result = await profileService.upsertValues(req.user.id, req.body);
+  const userId = req.user.userId;
+  const result = await profileService.upsertValues(userId, req.body);
 
   res.status(200).json({
     success: true,
@@ -64,7 +68,8 @@ export const upsertValues = asyncWrapper(async (req, res) => {
  * Onboarding step 15: about me.
  */
 export const upsertNarrative = asyncWrapper(async (req, res) => {
-  const result = await profileService.upsertNarrative(req.user.id, req.body);
+  const userId = req.user.userId;
+  const result = await profileService.upsertNarrative(userId, req.body);
 
   res.status(200).json({
     success: true,
@@ -80,8 +85,9 @@ export const upsertNarrative = asyncWrapper(async (req, res) => {
  * after your media upload middleware has already pushed files to Cloudinary.
  */
 export const savePhotos = asyncWrapper(async (req, res) => {
+  const userId = req.user.userId;
   const result = await profileService.saveProfilePhotos(
-    req.user.id,
+    userId,
     req.body.photos,
   );
 
@@ -99,8 +105,9 @@ export const savePhotos = asyncWrapper(async (req, res) => {
  * after your media upload middleware has already pushed files to storage.
  */
 export const saveVoiceAnswers = asyncWrapper(async (req, res) => {
+  const userId = req.user.userId;
   const result = await profileService.saveVoiceAnswers(
-    req.user.id,
+    userId,
     req.body.answers,
   );
 

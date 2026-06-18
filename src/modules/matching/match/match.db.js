@@ -111,57 +111,60 @@ export const findUserMatches = async ({
     skip: offset,
     take: limit,
     include: {
-      userA: {
+  userA: {
+    include: {
+      profile: {
         include: {
-          profile: {
-            include: {
-              identity: true,
-              lifestyle: true,
-              values: true,
-              narrative: true,
-            }
-          },
-          profilePhotos: {
-            where: { status: "ACTIVE" },
-            orderBy: [{ isPrimary: "desc" }, { position: "asc" }],
-          },
-          voiceAnswers: {
-            where: { status: "ACTIVE" },
-            include: { voicePrompt: true },
-          },
+          identity: true,
+          lifestyle: true,
+          values: true,
+          narrative: true,
         },
       },
-      userB: {
-        include: {
-          profile: {
-            include: {
-              identity: true,
-              lifestyle: true,
-              values: true,
-              narrative: true,
-            }
-          },
-          profilePhotos: {
-            where: { status: "ACTIVE" },
-            orderBy: [{ isPrimary: "desc" }, { position: "asc" }],
-          },
-          voiceAnswers: {
-            where: { status: "ACTIVE" },
-            include: { voicePrompt: true },
-          },
-        },
+      profilePhotos: {
+        where: { status: "ACTIVE" },
+        orderBy: [{ isPrimary: "desc" }, { position: "asc" }],
       },
-      conversation: {
-        include: {
-          messages: {
-            orderBy: { createdAt: "desc" },
-            take: 5,
-          },
-          lastMessage: true,
-        },
+      voiceAnswers: {
+        where: { status: "ACTIVE" },
+        include: { voicePrompt: true },
       },
-      compatibilityScore: true,
     },
+  },
+
+  userB: {
+    include: {
+      profile: {
+        include: {
+          identity: true,
+          lifestyle: true,
+          values: true,
+          narrative: true,
+        },
+      },
+      profilePhotos: {
+        where: { status: "ACTIVE" },
+        orderBy: [{ isPrimary: "desc" }, { position: "asc" }],
+      },
+      voiceAnswers: {
+        where: { status: "ACTIVE" },
+        include: { voicePrompt: true },
+      },
+    },
+  },
+
+  conversation: {
+    include: {
+      messages: {
+        orderBy: {
+          createdAt: "desc",
+        },
+        take: 5,
+      },
+      lastMessage: true,
+    },
+  },
+  }
   });
 };
 

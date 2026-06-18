@@ -2,7 +2,7 @@ import asyncWrapper from "../../../lib/asyncWrapper.js";
 import * as matchService from "./match.service.js";
 
 export const getMyMatches = asyncWrapper(async (req, res) => {
-  const userId = req.user.id;
+  const userId = req.user.userId;
 
   const matches = await matchService.getMyMatches(userId);
 
@@ -14,7 +14,7 @@ export const getMyMatches = asyncWrapper(async (req, res) => {
 });
 
 export const unmatch = asyncWrapper(async (req, res) => {
-  const userId = req.user.id;
+ const userId = req.user.userId;
   const { matchId } = req.params;
 
   const match = await matchService.unmatch({

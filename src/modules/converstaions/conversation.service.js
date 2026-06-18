@@ -16,6 +16,10 @@ import {
 // Constants
 // ---------------------------------------------------------------------------
 
+// RECONCILED: previously CONTACT/stage-4 and stage-5 disagreed across files
+// (contracts.js and db.js already treated 5 as the contact stage; this file
+// and conversation.stage.js still said 4). Stage 4's real label is a
+// placeholder pending confirmation — see conversation.stage.js TODO.
 const STAGE_META = {
   2: {
     label: "voice messages",
@@ -28,19 +32,27 @@ const STAGE_META = {
   },
 
   4: {
-    label: "contact exchange",
+    label: "deeper conversation",
     priceKey: "conversation.unlockStage4",
+  },
+
+  5: {
+    label: "contact exchange",
+    priceKey: "conversation.unlockStage5",
   },
 };
 
-const VALID_MESSAGE_TYPES = ["TEXT", "VOICE", "PHOTO", "CONTACT"];
+// RECONCILED: CONTACT removed from sendable types. Per prior work, contact
+// info is revealed passively once both sides unlock stage 5 (see
+// applyStageUnlock in conversation.db.js), not sent as a message. Surfaced
+// instead via getConversation's `partnerContact` field below.
+const VALID_MESSAGE_TYPES = ["TEXT", "VOICE", "PHOTO"];
 
 // Minimum stage required to send each message type.
 const MESSAGE_STAGE_REQUIREMENT = {
   TEXT: 1,
   VOICE: 2,
   PHOTO: 3,
-  CONTACT: 4,
 };
 
 // ---------------------------------------------------------------------------
@@ -143,8 +155,11 @@ export const formatMessage = (message) => {
 /**
  * Resolve the viewer's participant role (A or B) and throw if they are not
  * a participant in this conversation.
+ *
+ * Exported so conversation.media.js can run the same check before an
+ * upload instead of duplicating it.
  */
-const assertParticipant = (conversation, userId) => {
+export const assertParticipant = (conversation, userId) => {
   const role = conversationDb.resolveParticipantRole(conversation, userId);
   if (!role) {
     throw new ForbiddenError("You are not a participant in this conversation");
@@ -154,8 +169,11 @@ const assertParticipant = (conversation, userId) => {
 
 /**
  * Throw if the conversation's current stage does not allow this message type.
+ *
+ * Exported so conversation.media.js can gate uploads by stage before
+ * spending a Cloudinary call on a request that would be rejected anyway.
  */
-const assertStageAllowsMessageType = (conversation, type) => {
+export const assertStageAllowsMessageType = (conversation, type) => {
   const required = MESSAGE_STAGE_REQUIREMENT[type];
   if (required === undefined) {
     throw new BadRequestError(`Unknown message type: ${type}`);
@@ -245,8 +263,6 @@ export const getConversation = async (
 
   await blockService.assertConversationNotBlocked(conversation);
 
-  // FIX (Bug 5): Mark messages read on REST open, same as socket join, so
-  // unread state stays consistent regardless of which path the client uses.
   const readResult = await conversationDb.markMessagesRead(
     conversationId,
     userId,
@@ -272,6 +288,17 @@ export const getConversation = async (
   const partnerReady =
     nextStage <= 5 ? (partnerUnlocks[`stage${nextStage}`] ?? false) : false;
 
+  // RECONCILED: contact is no longer a message type you "send" — once both
+  // sides have unlocked stage 5, the partner's contact value is surfaced
+  // here passively instead.
+  let partnerContact = null;
+  if (conversation.contactRevealed) {
+    const partnerId =
+      role === "A" ? conversation.userBId : conversation.userAId;
+    const partner = await findPhoneById(partnerId);
+    partnerContact = partner?.phone ?? null;
+  }
+
   return {
     id: conversation.id,
     matchId: conversation.matchId,
@@ -281,6 +308,8 @@ export const getConversation = async (
     myUnlocks,
     partnerUnlocks,
     partnerReady,
+    contactRevealed: conversation.contactRevealed,
+    partnerContact,
     unlockHistory,
     messages: messages.map(formatMessage).reverse(),
     nextCursor:
@@ -301,66 +330,66 @@ export const unlockStage = async (conversationId, userId, targetStage) => {
     throw new BadRequestError("targetStage must be 2, 3, 4, or 5");
   }
 
+  const conversation = await conversationDb.findById(conversationId);
+
+  if (!conversation) {
+    throw new NotFoundException("Conversation not found");
+  }
+
+  const role = assertParticipant(conversation, userId);
+
+  assertSequentialUnlock(conversation, targetStage);
+
+  assertNotAlreadyUnlocked(conversation, role, targetStage);
+
+  await blockService.assertConversationNotBlocked(conversation);
+
   const meta = STAGE_META[targetStage];
   const price = getPrice(meta.priceKey);
 
-  const result = await prisma.$transaction(async (trx) => {
-    const conversation = await conversationDb.findById(conversationId, trx);
-
-    if (!conversation) {
-      throw new NotFoundException("Conversation not found");
-    }
-
-    const role = assertParticipant(conversation, userId);
-
-    assertSequentialUnlock(conversation, targetStage);
-
-    assertNotAlreadyUnlocked(conversation, role, targetStage);
-
-    // FIX (Bug 1): was calling bare `assertConversationNotBlocked` which does
-    // not exist in this scope — must go through blockService.
-    await blockService.assertConversationNotBlocked(conversation);
-
-    await walletService.debitCoins({
-      userId,
-      amount: price.amount,
-      reason: price.action,
-      description: price.description,
-      metadata: {
-        conversationId,
-        targetStage,
-      },
-      trx,
-    });
-
-    await conversationDb.createUnlockRecord(
-      {
-        conversationId,
+  const result = await prisma.$transaction(
+    async (trx) => {
+      await walletService.debitCoins({
         userId,
-        stage: targetStage,
-      },
-      trx,
-    );
+        amount: price.amount,
+        reason: price.action,
+        description: price.description,
+        metadata: {
+          conversationId,
+          targetStage,
+        },
+        trx,
+      });
 
-    const unlockResult = await conversationDb.applyStageUnlock(
-      {
-        conversationId,
+      await conversationDb.createUnlockRecord(
+        {
+          conversationId,
+          userId,
+          stage: targetStage,
+        },
+        trx,
+      );
+
+      const unlockResult = await conversationDb.applyStageUnlock(
+        {
+          conversationId,
+          role,
+          targetStage,
+        },
+        trx,
+      );
+
+      return {
+        ...unlockResult,
         role,
-        targetStage,
-      },
-      trx,
-    );
+      };
+    },
+    {
+      timeout: 10000,
+    },
+  );
 
-    return {
-      ...unlockResult,
-      role,
-    };
-  });
-
-  // Fires after a successful payment to notify the partner that this user
-  // has paid and is waiting. Renamed from STAGE_UNLOCK_REQUESTED to clarify
-  // it represents a completed payment, not an incoming request.
-  eventBus.emit(EVENT_TYPES.STAGE_UNLOCK_PAID, {
+  eventBus.emit(EVENT_TYPES.STAGE_UNLOCK_REQUESTED, {
     conversationId,
     targetStage,
     userId,
@@ -382,6 +411,7 @@ export const unlockStage = async (conversationId, userId, targetStage) => {
   };
 };
 
+
 /**
  * Called by the Socket.IO join_conversation handler.
  * Validates access, joins the socket room, and marks unread messages as read.
@@ -395,8 +425,6 @@ export const joinConversation = async (conversationId, userId) => {
 
   assertParticipant(conversation, userId);
 
-  // FIX (Bug 1): was calling bare `assertConversationNotBlocked` which does
-  // not exist in this scope — must go through blockService.
   await blockService.assertConversationNotBlocked(conversation);
 
   const result = await conversationDb.markMessagesRead(conversationId, userId);
@@ -413,19 +441,17 @@ export const joinConversation = async (conversationId, userId) => {
 };
 
 /**
- * Called by the Socket.IO send_message handler.
+ * Called by the Socket.IO send_message handler (and the REST controller).
  * Validates the message type against the conversation stage, then persists.
  *
- * For CONTACT messages: ignores any contactValue from the client and looks up
- * the sender's phone number server-side.
+ * RECONCILED: CONTACT is no longer a sendable type. Contact reveal is now
+ * passive — see getConversation's `partnerContact` field.
  */
 export const sendMessage = async (
   conversationId,
   senderId,
   { type, body, voiceUrl, voiceDuration, photoUrl },
 ) => {
-  // FIX (Bug 3): guard conversation existence before validating message type
-  // so the client always gets the most accurate error for the actual failure.
   const conversation = await conversationDb.findById(conversationId);
 
   if (!conversation) {
@@ -454,18 +480,6 @@ export const sendMessage = async (
     throw new BadRequestError("photoUrl is required");
   }
 
-  let contactValue = null;
-
-  if (type === "CONTACT") {
-    const sender = await findPhoneById(senderId);
-
-    contactValue = sender?.phone ?? null;
-
-    if (!contactValue) {
-      throw new BadRequestError("Sender phone number not found");
-    }
-  }
-
   const message = await conversationDb.createMessage({
     conversationId,
     senderId,
@@ -474,7 +488,7 @@ export const sendMessage = async (
     voiceUrl: type === "VOICE" ? voiceUrl : null,
     voiceDuration: type === "VOICE" ? (voiceDuration ?? null) : null,
     photoUrl: type === "PHOTO" ? photoUrl : null,
-    contactValue,
+    contactValue: null,
   });
 
   const formatted = formatMessage(message);
@@ -501,8 +515,6 @@ export const markRead = async (conversationId, userId) => {
 
   assertParticipant(conversation, userId);
 
-  // FIX (Bug 2): was calling markMessagesRead twice — the first call's result
-  // was discarded and the write hit the DB a second time unnecessarily.
   const result = await conversationDb.markMessagesRead(conversationId, userId);
 
   if (result.count > 0) {
@@ -512,6 +524,8 @@ export const markRead = async (conversationId, userId) => {
       readAt: new Date().toISOString(),
     });
   }
+
+  return result;
 };
 
 /**

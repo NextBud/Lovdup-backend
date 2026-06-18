@@ -1,6 +1,19 @@
 import * as conversationDb from "../converstaions/conversation.db.js";
 import * as blockDb from "./block.db.js";
 
+export const assertConversationNotBlocked = async (conversation) => {
+  const block = await blockDb.findBetweenUsers(
+    conversation.userAId,
+    conversation.userBId,
+  );
+
+  if (block) {
+    throw new ForbiddenError("Conversation is blocked");
+  }
+
+  return null;
+};
+
 export const blockConversationUser = async (
   conversationId,
   blockerId,
@@ -9,7 +22,7 @@ export const blockConversationUser = async (
   const conversation = await conversationDb.findById(conversationId);
 
   if (!conversation) {
-    throw new NotFoundError("Conversation not found");
+    throw new NotFoundException("Conversation not found");
   }
 
   const isParticipant =
@@ -19,19 +32,21 @@ export const blockConversationUser = async (
     throw new ForbiddenError("You are not a participant in this conversation");
   }
 
-  const existing = await blockDb.findByUsers(blockerId, blockedId);
-
-  if (existing) {
-    return {
-      blockedId,
-      alreadyBlocked: true,
-    };
-  }
-
   const blockedId =
     conversation.userAId === blockerId
       ? conversation.userBId
       : conversation.userAId;
+
+  const existing = await blockDb.findBetweenUsers(blockerId, blockedId);
+
+  if (existing) {
+    return {
+      conversationId,
+      blockerId,
+      blockedId,
+      alreadyBlocked: true,
+    };
+  }
 
   await blockDb.create({
     blockerId,
@@ -43,5 +58,6 @@ export const blockConversationUser = async (
     conversationId,
     blockerId,
     blockedId,
+    alreadyBlocked: false,
   };
 };

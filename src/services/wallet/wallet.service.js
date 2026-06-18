@@ -34,9 +34,7 @@ export const creditCoins = async ({
     trx,
   });
 
-  const updatedWallet = await walletDb.findByUserId(userId, trx);
-
-  const balanceAfter = updatedWallet.balance;
+  const balanceAfter = balanceBefore + amount;
 
   const transaction = await walletDb.createTransaction(
     {
@@ -54,7 +52,9 @@ export const creditCoins = async ({
   );
 
   return {
-    wallet: updatedWallet,
+    walletId: wallet.id,
+    balanceBefore,
+    balanceAfter,
     transaction,
   };
 };
@@ -89,9 +89,7 @@ export const debitCoins = async ({
     throw new BadRequestError("Insufficient coin balance");
   }
 
-  const updatedWallet = await walletDb.findByUserId(userId, trx);
-
-  const balanceAfter = updatedWallet.balance;
+  const balanceAfter = balanceBefore - amount;
 
   const transaction = await walletDb.createTransaction(
     {
@@ -109,10 +107,13 @@ export const debitCoins = async ({
   );
 
   return {
-    wallet: updatedWallet,
+    walletId: wallet.id,
+    balanceBefore,
+    balanceAfter,
     transaction,
   };
 };
+
 
 export const getMyWallet = async (userId, trx = null) => {
   return getOrCreateWallet(userId, trx);

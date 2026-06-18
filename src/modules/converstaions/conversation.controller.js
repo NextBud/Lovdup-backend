@@ -61,3 +61,21 @@ export const blockConversation = asyncWrapper(async (req, res) => {
     data: result,
   });
 });
+
+export const uploadVoiceMessage = asyncWrapper(async (req, res) => {
+  const result = await conversationMedia.uploadVoice(
+    req.params.conversationId,
+    req.user.userId,
+    req.file,
+  );
+  res.status(201).json({ success: true, data: result });
+});
+
+export const uploadPhotoMessage = asyncWrapper(async (req, res) => {
+  const result = await conversationMedia.uploadPhoto(
+    req.params.conversationId,
+    req.user.userId,
+    req.file,
+  );
+  res.status(201).json({ success: true, data: result });
+});
