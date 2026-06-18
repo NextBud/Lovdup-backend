@@ -8,23 +8,9 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-model RefreshSession {
-  id               String    @id @default(uuid())
-  userId           String
-  refreshTokenHash String    @unique
-  userAgent        String?
-  ipAddress        String?
-  createdAt        DateTime  @default(now())
-  lastUsedAt       DateTime  @updatedAt
-  expiresAt        DateTime
-  revokedAt        DateTime?
-  isRevoked        Boolean   @default(false)
-  rotationCount    Int       @default(0)
-  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([expiresAt])
-}
+// ---------------------------------------------------------------------------
+// Core Auth & Account Models
+// ---------------------------------------------------------------------------
 
 model User {
   id                     String                @id @default(uuid())
@@ -52,26 +38,50 @@ model User {
   updatedAt              DateTime              @updatedAt
   photosProcessingStatus MediaProcessingStatus @default(UPLOADING)
   voiceProcessingStatus  MediaProcessingStatus @default(UPLOADING)
-  authProviders          AuthProvider[]
-  blocksReceived         Block[]               @relation("BlocksReceived")
-  blocksMade             Block[]               @relation("BlocksMade")
-  compatibilityAsUserA   CompatibilityScore[]  @relation("CompatibilityUserA")
-  compatibilityAsUserB   CompatibilityScore[]  @relation("CompatibilityUserB")
-  matchesAsUserA         Match[]               @relation("MatchUserA")
-  matchesAsUserB         Match[]               @relation("MatchUserB")
-  matchPreference        MatchPreference?
-  receivedMatchRequests  MatchRequest[]        @relation("ReceivedMatchRequests")
-  sentMatchRequests      MatchRequest[]        @relation("SentMatchRequests")
-  candidateMatchResults  MatchResult[]         @relation("CandidateMatchResults")
-  viewedMatchResults     MatchResult[]         @relation("ViewerMatchResults")
-  onboardingMedia        OnboardingMedia[]
-  onboardingProgress     OnboardingProgress?
-  profile                Profile?
-  profilePhotos          ProfilePhoto[]
-  refreshSessions        RefreshSession[]
-  voiceAnswers           VoiceAnswer[]
-  wallet                 Wallet?
-  walletTransactions     WalletTransaction[]
+
+  // Relations
+  conversationUnlocks   ConversationUnlock[]
+  authProviders         AuthProvider[]
+  compatibilityAsUserA  CompatibilityScore[]  @relation("CompatibilityUserA")
+  compatibilityAsUserB  CompatibilityScore[]  @relation("CompatibilityUserB")
+  matchesAsUserA        Match[]               @relation("MatchUserA")
+  matchesAsUserB        Match[]               @relation("MatchUserB")
+  matchPreference       MatchPreference?
+  receivedMatchRequests MatchRequest[]        @relation("ReceivedMatchRequests")
+  sentMatchRequests     MatchRequest[]        @relation("SentMatchRequests")
+  candidateMatchResults MatchResult[]         @relation("CandidateMatchResults")
+  viewedMatchResults    MatchResult[]         @relation("ViewerMatchResults")
+  onboardingMedia       OnboardingMedia[]
+  onboardingProgress    OnboardingProgress?
+  profile               Profile?
+  profilePhotos         ProfilePhoto[]
+  refreshSessions       RefreshSession[]
+  voiceAnswers          VoiceAnswer[]
+  wallet                Wallet?
+  walletTransactions    WalletTransaction[]
+  messages              Message[]
+  blocksCreated         UserBlock[]           @relation("UserBlocksCreated")
+  blocksReceived        UserBlock[]           @relation("UserBlocksReceived")
+
+  // Direct Conversation relationship tracking
+  conversationsAsUserA  Conversation[]        @relation("ConversationUserA")
+  conversationsAsUserB  Conversation[]        @relation("ConversationUserB")
+}
+
+model ConversationUnlock {
+  id             String   @id @default(uuid())
+  conversationId String
+  userId         String
+  stage          Int
+  createdAt      DateTime @default(now())
+
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId, stage])
+  @@index([conversationId])
+  @@index([userId])
+  @@index([stage])
 }
 
 model AuthProvider {
@@ -79,12 +89,36 @@ model AuthProvider {
   userId      String
   provider    AuthProviderType
   providerUid String
-  linkedAt    DateTime         @default(now())
-  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  linkedAt    DateTime         @default(now()) 
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerUid])
   @@index([userId])
 }
+
+model RefreshSession {
+  id               String    @id @default(uuid())
+  userId           String
+  refreshTokenHash String    @unique
+  userAgent        String?
+  ipAddress        String?
+  createdAt        DateTime  @default(now())
+  lastUsedAt       DateTime  @updatedAt
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  isRevoked        Boolean   @default(false)
+  rotationCount    Int       @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// ---------------------------------------------------------------------------
+// Onboarding Models
+// ---------------------------------------------------------------------------
 
 model OnboardingProgress {
   id                String           @id @default(uuid())
@@ -99,7 +133,8 @@ model OnboardingProgress {
   completedAt       DateTime?
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
-  user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model OnboardingMedia {
@@ -113,14 +148,15 @@ model OnboardingMedia {
   position  Int?
   promptId  String?
   createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([mediaType])
 }
 
 // ---------------------------------------------------------------------------
-// Profile — top-level container, no data fields itself
+// Profile Container & Sub-models
 // ---------------------------------------------------------------------------
 
 model Profile {
@@ -133,44 +169,36 @@ model Profile {
   completionPercent      Int                   @default(0)
   photosProcessingStatus MediaProcessingStatus @default(UPLOADING)
   voiceProcessingStatus  MediaProcessingStatus @default(UPLOADING)
-  user                   User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  identity               ProfileIdentity?
-  lifestyle              ProfileLifestyle?
-  narrative              ProfileNarrative?
-  profilePhotos          ProfilePhoto[]
-  values                 ProfileValues?
-  voiceAnswers           VoiceAnswer[]
-}
 
-// ---------------------------------------------------------------------------
-// ProfileIdentity — who you are
-// ---------------------------------------------------------------------------
+  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  identity      ProfileIdentity?
+  lifestyle     ProfileLifestyle?
+  narrative     ProfileNarrative?
+  profilePhotos ProfilePhoto[]
+  values        ProfileValues?
+  voiceAnswers  VoiceAnswer[]
+}
 
 model ProfileIdentity {
-  id               String   @id @default(uuid())
-  profileId        String   @unique
-  firstName        String
-  lastName         String
-  birthDate        DateTime
-  gender           Gender
-  originCountry    String
-  residenceCountry String
-  residenceCity    String
-  ethnicity        String?
-  languages        String[]
-  occupation       String
-  // Added: relationship intent is an identity-level field
+  id                    String   @id @default(uuid())
+  profileId             String   @unique
+  firstName             String
+  lastName              String
+  birthDate             DateTime
+  gender                Gender
+  originCountry         String
+  residenceCountry      String
+  residenceCity         String
+  ethnicity             String?
+  languages             String[]
+  occupation            String
   relationshipIntention String?
-  // Added: education level
-  education        String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  profile          Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
-}
+  education             String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
-// ---------------------------------------------------------------------------
-// ProfileLifestyle — how you live
-// ---------------------------------------------------------------------------
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
 
 model ProfileLifestyle {
   id                 String   @id @default(uuid())
@@ -184,12 +212,9 @@ model ProfileLifestyle {
   financialStatus    String
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
-  profile            Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
-}
 
-// ---------------------------------------------------------------------------
-// ProfileValues — what you believe and want
-// ---------------------------------------------------------------------------
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
 
 model ProfileValues {
   id                  String   @id @default(uuid())
@@ -197,18 +222,14 @@ model ProfileValues {
   religion            String
   religionImportance  String
   childrenPreference  String
-  // Added: whether user currently has children (distinct from wanting them)
   hasChildren         Boolean  @default(false)
   personalCommStyle   String
   personalTuesdayVibe String
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-  profile             Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
-}
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-// ---------------------------------------------------------------------------
-// ProfileNarrative — your story
-// ---------------------------------------------------------------------------
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
 
 model ProfileNarrative {
   id        String   @id @default(uuid())
@@ -216,7 +237,8 @@ model ProfileNarrative {
   aboutMe   String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 }
 
 model ProfilePhoto {
@@ -233,13 +255,18 @@ model ProfilePhoto {
   moderationStatus MediaModerationStatus @default(PENDING)
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
-  profile          Profile               @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  user             User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([profileId, position])
   @@index([userId])
   @@index([profileId])
 }
+
+// ---------------------------------------------------------------------------
+// Voice Interaction Models
+// ---------------------------------------------------------------------------
 
 model VoicePrompt {
   id        String        @id @default(uuid())
@@ -256,7 +283,7 @@ model VoiceAnswer {
   userId              String
   profileId           String
   voicePromptId       String
-  url                 String
+  url                 String                
   publicId            String
   mimeType            String
   size                Int
@@ -270,9 +297,10 @@ model VoiceAnswer {
   processingError     String?
   transcriptionStatus String?
   waveformUrl         String?
-  profile             Profile               @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  user                User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  voicePrompt         VoicePrompt           @relation(fields: [voicePromptId], references: [id])
+
+  profile     Profile     @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  voicePrompt VoicePrompt @relation(fields: [voicePromptId], references: [id])
 
   @@unique([profileId, voicePromptId])
   @@index([userId])
@@ -281,54 +309,36 @@ model VoiceAnswer {
 }
 
 // ---------------------------------------------------------------------------
-// MatchPreference — what the viewer is looking for
-// ageRange string replaced with ageMin / ageMax integers for query use.
+// Matching & Discovery Models
 // ---------------------------------------------------------------------------
 
 model MatchPreference {
   id                           String   @id @default(uuid())
   userId                       String   @unique
-
-  // Who
   preferredGenders             Gender[]
-  // CHANGED: was ageRange String — split into usable integers
   ageMin                       Int      @default(18)
   ageMax                       Int      @default(99)
-
-  // Where
-  locationPreference           String   // "Same city" | "Same country" | "Anywhere"
-
-  // Values
-  religionPreference           String   // specific religion or "Open to all"
+  locationPreference           String
+  religionPreference           String
   culturePreference            String
-  childrenPreference           String   // preference for partner's children status
+  childrenPreference           String
   faithPractice                String
-
-  // Personality & energy
   energyDescription            String
   communicationStyle           String
   tuesdayFeeling               String
   energyMatchStyle             String
   ambitionImportance           String
-
-  // Lifestyle
   socialLevel                  String
-  lifestylePreference          String   // preferred drinking/smoking tolerance
-
-  // Financial
+  lifestylePreference          String
   financialStabilityPreference String
   financialStagePreference     String
-
-  // Open-ended intent
   idealPartnerType             String
   matchVoicePrompt             String
-
-  // Minimum score a candidate must reach to be shown
   minCompatibilityScore        Int      @default(50)
-
   createdAt                    DateTime @default(now())
   updatedAt                    DateTime @updatedAt
-  user                         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model CompatibilityScore {
@@ -336,17 +346,17 @@ model CompatibilityScore {
   userAId        String
   userBId        String
   score          Int
-  // Sub-scores for transparency / debugging
-  identityScore  Int           @default(0)  // was profileScore
+  identityScore  Int           @default(0)
   lifestyleScore Int           @default(0)
   valuesScore    Int           @default(0)
   locationScore  Int           @default(0)
   reasons        Json?
   calculatedAt   DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
-  userA          User          @relation("CompatibilityUserA", fields: [userAId], references: [id], onDelete: Cascade)
-  userB          User          @relation("CompatibilityUserB", fields: [userBId], references: [id], onDelete: Cascade)
   matchResults   MatchResult[]
+
+  userA User @relation("CompatibilityUserA", fields: [userAId], references: [id], onDelete: Cascade)
+  userB User @relation("CompatibilityUserB", fields: [userBId], references: [id], onDelete: Cascade)
 
   @@unique([userAId, userBId])
   @@index([userAId])
@@ -366,8 +376,9 @@ model MatchRequest {
   voiceNoteUrl String?
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
-  receiver     User               @relation("ReceivedMatchRequests", fields: [receiverId], references: [id], onDelete: Cascade)
-  sender       User               @relation("SentMatchRequests", fields: [senderId], references: [id], onDelete: Cascade)
+
+  receiver User @relation("ReceivedMatchRequests", fields: [receiverId], references: [id], onDelete: Cascade)
+  sender   User @relation("SentMatchRequests", fields: [senderId], references: [id], onDelete: Cascade)
 
   @@unique([senderId, receiverId])
   @@index([senderId, receiverId])
@@ -386,8 +397,12 @@ model Match {
   unmatchedAt DateTime?
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
-  userA       User        @relation("MatchUserA", fields: [userAId], references: [id], onDelete: Cascade)
-  userB       User        @relation("MatchUserB", fields: [userBId], references: [id], onDelete: Cascade)
+  unmatchedBy      String?
+  unmatchedReason  String?
+
+  userA        User          @relation("MatchUserA", fields: [userAId], references: [id], onDelete: Cascade)
+  userB        User          @relation("MatchUserB", fields: [userBId], references: [id], onDelete: Cascade)
+  conversation Conversation? 
 
   @@unique([userAId, userBId])
   @@index([userAId])
@@ -396,47 +411,123 @@ model Match {
 }
 
 model MatchResult {
-  id                   String              @id @default(uuid())
+  id                   String            @id @default(uuid())
+
   viewerId             String
   candidateId          String
+
   compatibilityScoreId String?
+
   rank                 Int?
   score                Int?
+
   reason               MatchResultReason
-  shownAt              DateTime            @default(now())
+
+  shownAt              DateTime          @default(now())
   actedAt              DateTime?
-  dismissed            Boolean             @default(false)
+  dismissed            Boolean           @default(false)
+
   candidate            User                @relation("CandidateMatchResults", fields: [candidateId], references: [id], onDelete: Cascade)
   compatibilityScore   CompatibilityScore? @relation(fields: [compatibilityScoreId], references: [id])
   viewer               User                @relation("ViewerMatchResults", fields: [viewerId], references: [id], onDelete: Cascade)
 
   @@unique([viewerId, candidateId])
+
   @@index([viewerId])
   @@index([candidateId])
   @@index([reason])
   @@index([dismissed])
 }
 
-model Block {
-  id        String   @id @default(uuid())
-  blockerId String
-  blockedId String
-  reason    String?
-  createdAt DateTime @default(now())
-  blocked   User     @relation("BlocksReceived", fields: [blockedId], references: [id], onDelete: Cascade)
-  blocker   User     @relation("BlocksMade", fields: [blockerId], references: [id], onDelete: Cascade)
+// ---------------------------------------------------------------------------
+// Messaging & Conversation Models
+// ---------------------------------------------------------------------------
 
-  @@unique([blockerId, blockedId])
-  @@index([blockerId])
-  @@index([blockedId])
+model Conversation {
+  id                String @id @default(uuid())
+
+  matchId           String @unique
+
+  userAId           String?
+  userBId           String?
+
+  stage             Int    @default(1)
+
+  userAStage2       Boolean @default(false)
+  userBStage2       Boolean @default(false)
+
+  userAStage3       Boolean @default(false)
+  userBStage3       Boolean @default(false)
+
+  userAStage4       Boolean @default(false)
+  userBStage4       Boolean @default(false)
+
+  stageStartedAt    DateTime @default(now())
+
+  lastActivityAt    DateTime @default(now())
+  status ConversationStatus  @default(ACTIVE)
+
+  contactRevealed   Boolean @default(false)
+  contactRevealedAt DateTime?
+
+  lastMessageAt     DateTime?
+  lastMessageId     String? @unique
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  match               Match                @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  messages            Message[]
+  lastMessage         Message?             @relation("ConversationLastMessage", fields: [lastMessageId], references: [id])
+  conversationUnlocks ConversationUnlock[]
+
+  
+  userA               User?                @relation("ConversationUserA", fields: [userAId], references: [id])
+  userB               User?                @relation("ConversationUserB", fields: [userBId], references: [id])
+
+  @@index([matchId])
+  @@index([lastMessageAt])
+  @@index([lastActivityAt])
+  @@index([stage])
+  @@index([userAId, lastMessageAt])
+  @@index([userBId, lastMessageAt])
+  @@index([userAId])
+  @@index([userBId])
 }
 
+model Message {
+  id             String        @id @default(uuid())
+  conversationId String
+
+  senderId       String?
+  sender         User?         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  type           MessageType
+  body           String?
+  voiceUrl       String?
+  voiceDuration  Int?
+  photoUrl       String?
+  contactValue   String?
+  readAt         DateTime?
+  createdAt      DateTime      @default(now())
+
+  conversation   Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  lastMessageFor Conversation? @relation("ConversationLastMessage")
+
+  @@index([conversationId, createdAt])
+  @@index([senderId])
+}
+
+// ---------------------------------------------------------------------------
+// Wallet & Transactions
+// ---------------------------------------------------------------------------
+
 model Wallet {
-  id           String              @id @default(uuid())
-  userId       String              @unique
-  balance      Int                 @default(0)
-  createdAt    DateTime            @default(now())
-  updatedAt    DateTime            @updatedAt
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  balance   Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   transactions WalletTransaction[]
 }
@@ -453,13 +544,29 @@ model WalletTransaction {
   description   String?
   metadata      Json?
   createdAt     DateTime                @default(now())
-  user          User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  wallet        Wallet                  @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
 
   @@index([walletId])
   @@index([userId])
   @@index([reason])
   @@index([createdAt])
+}
+
+model UserBlock {
+  id        String   @id @default(uuid())
+  blockerId String
+  blockedId String
+  reason    String?
+  createdAt DateTime @default(now())
+
+  blocker   User     @relation("UserBlocksCreated", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked   User     @relation("UserBlocksReceived", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerId, blockedId])
+  @@index([blockerId])
+  @@index([blockedId])
 }
 
 // ---------------------------------------------------------------------------
@@ -472,12 +579,26 @@ enum UserRole {
   MODERATOR
 }
 
+enum MessageType {
+  SYSTEM
+  TEXT
+  VOICE
+  PHOTO
+  CONTACT
+}
+
 enum UserStatus {
   ACTIVE
   PAUSED
   SUSPENDED
   DELETED
   BANNED
+}
+
+enum ConversationStatus {
+  ACTIVE
+  BLOCKED
+  CLOSED
 }
 
 enum AuthProviderType {
@@ -519,8 +640,6 @@ enum MediaModerationStatus {
 }
 
 enum MatchRequestType {
-  // PASS removed — a pass is the absence of a request, not a request type.
-  // Store passes in a separate MatchPass table if tracking is needed.
   LIKE
   SUPER_LIKE
 }
@@ -555,10 +674,13 @@ enum WalletTransactionType {
 
 enum WalletTransactionReason {
   REQUEST_NEW_MATCHES
+
   START_STAGE_1
-  START_STAGE_2
-  START_STAGE_3
-  START_STAGE_4
+  UNLOCK_STAGE_2
+  UNLOCK_STAGE_3
+  UNLOCK_STAGE_4
+
   COMPLIMENT_PICTURE
+
   ADMIN_ADJUSTMENT
 }

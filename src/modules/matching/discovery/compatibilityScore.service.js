@@ -1,5 +1,9 @@
 import * as compatibilityScoreDb from "./compatibilityScore.db.js";
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
 /**
  * Sort two user IDs so the pair is always stored in the same direction
  * regardless of who triggered the calculation.
@@ -8,8 +12,30 @@ export const normalizePair = (userOneId, userTwoId) => {
   return [userOneId, userTwoId].sort();
 };
 
+/**
+ * Calculate age from birth date
+ */
+const calculateAge = (birthDate) => {
+  if (!birthDate) return null;
+  const today = new Date();
+  const dob = new Date(birthDate);
+  let age = today.getFullYear() - dob.getFullYear();
+  const monthDiff = today.getMonth() - dob.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
+    age -= 1;
+  }
+  return age;
+};
+
+/**
+ * Parse age range from min/max values
+ */
+const parseAgeRange = (ageMin, ageMax) => {
+  return { min: ageMin ?? 18, max: ageMax ?? 99 };
+};
+
 // ---------------------------------------------------------------------------
-// Score weights — must sum to 100
+// Score Weights — must sum to 100
 // ---------------------------------------------------------------------------
 //
 //  Identity  (gender + age range)          0 – 30
@@ -30,34 +56,16 @@ const WEIGHTS = {
   location: 15,
 };
 
-/**
- * Parse "18-35" style age-range strings produced by older clients that
- * stored ageRange as a string. Safe to remove once all preferences are
- * migrated to ageMin / ageMax integer columns.
- */
-const parseAgeRange = (ageMin, ageMax) => {
-  return { min: ageMin ?? 18, max: ageMax ?? 99 };
-};
-
-const calculateAge = (birthDate) => {
-  if (!birthDate) return null;
-  const today = new Date();
-  const dob = new Date(birthDate);
-  let age = today.getFullYear() - dob.getFullYear();
-  const m = today.getMonth() - dob.getMonth();
-  if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age -= 1;
-  return age;
-};
-
 // ---------------------------------------------------------------------------
-// Identity score  (0 – 30)
+// Identity Score  (0 – 30)
 // ---------------------------------------------------------------------------
+
 const scoreIdentity = (preference, identity, reasons) => {
   if (!identity) return 0;
 
   let score = 0;
 
-  // Gender match — hard gate for most users, worth the most points
+  // Gender match — hard gate, worth the most points
   if (
     preference.preferredGenders?.length > 0 &&
     preference.preferredGenders.includes(identity.gender)
@@ -66,8 +74,7 @@ const scoreIdentity = (preference, identity, reasons) => {
     reasons.matched.push("Gender preference matched");
   } else if (preference.preferredGenders?.length > 0) {
     reasons.missed.push("Gender outside preference");
-    // Gender mismatch is disqualifying — caller filters by gender at DB
-    // level, so this branch is a safety net only.
+    // Gender mismatch is disqualifying — caller filters by gender at DB level
     return 0;
   }
 
@@ -88,8 +95,9 @@ const scoreIdentity = (preference, identity, reasons) => {
 };
 
 // ---------------------------------------------------------------------------
-// Values score  (0 – 30)
+// Values Score  (0 – 30)
 // ---------------------------------------------------------------------------
+
 const scoreValues = (preference, values, reasons) => {
   if (!values) return 0;
 
@@ -144,16 +152,15 @@ const scoreValues = (preference, values, reasons) => {
 };
 
 // ---------------------------------------------------------------------------
-// Lifestyle score  (0 – 25)
+// Lifestyle Score  (0 – 25)
 // ---------------------------------------------------------------------------
+
 const scoreLifestyle = (preference, lifestyle, reasons) => {
   if (!lifestyle) return 0;
 
   let score = 0;
 
-  // lifestylePreference encodes the viewer's tolerance for drinking/smoking.
-  // Values: "Sober only" | "Social drinker ok" | "Any" etc.
-  // We do a direct match for now; extend to a tolerance matrix as needed.
+  // Lifestyle tolerance match (drinking/smoking)
   if (preference.lifestylePreference) {
     const toleranceMatch = (() => {
       const pref = preference.lifestylePreference.toLowerCase();
@@ -197,7 +204,7 @@ const scoreLifestyle = (preference, lifestyle, reasons) => {
     }
   }
 
-  // Relocation openness — if viewer needs relocation willingness, check it
+  // Relocation openness
   if (preference.locationPreference === "Anywhere") {
     if (
       lifestyle.relocationFeelings === "Yes" ||
@@ -216,46 +223,81 @@ const scoreLifestyle = (preference, lifestyle, reasons) => {
 };
 
 // ---------------------------------------------------------------------------
-// Location score  (0 – 15)
+// Location Score  (0 – 15)
 // ---------------------------------------------------------------------------
-const scoreLocation = (preference, identity, reasons) => {
+
+// compatibilityScore.service.js - Update scoreLocation
+const scoreLocation = (preference, identity, viewerIdentity, reasons) => {
   if (!identity) return 0;
 
   const pref = preference.locationPreference;
 
-  // "Anywhere" — location is irrelevant, award full points
   if (!pref || pref === "Anywhere") {
     reasons.matched.push("Location: open to anywhere");
     return WEIGHTS.location;
   }
 
-  // We don't have the viewer's own city here — that would require a second
-  // DB lookup. Instead we award points based on whether the preference
-  // type is satisfied:
-  //   "Same city"    → only full points if city data exists (proxy: has city)
-  //   "Same country" → partial points
-  // The caller (discovery.service.js) can enhance this with viewer profile
-  // data if needed.
-
-  if (pref === "Same city" && identity.residenceCity) {
-    score += 15;
-    reasons.matched.push("Candidate has city data for same-city preference");
-    return 15;
+  // If we don't have viewer identity, give partial credit based on candidate data
+  if (!viewerIdentity) {
+    if (pref === "Same city" && identity.residenceCity) {
+      reasons.matched.push("Candidate has city data (viewer unknown)");
+      return 8;
+    }
+    if (pref === "Same country" && identity.residenceCountry) {
+      reasons.matched.push("Candidate has country data (viewer unknown)");
+      return 6;
+    }
+    return 5;
   }
 
-  if (pref === "Same country" && identity.residenceCountry) {
-    reasons.matched.push("Candidate has country data");
-    return 10;
+  // Same city comparison
+  if (pref === "Same city") {
+    if (identity.residenceCity && viewerIdentity.residenceCity) {
+      if (identity.residenceCity === viewerIdentity.residenceCity) {
+        reasons.matched.push("Same city");
+        return WEIGHTS.location;
+      } else {
+        reasons.missed.push("Different city");
+        return 5;
+      }
+    }
+    if (identity.residenceCity) {
+      reasons.matched.push("Candidate has city data");
+      return 10;
+    }
+    return 5;
   }
 
-  return 5; // Has some location data
+  // Same country comparison
+  if (pref === "Same country") {
+    if (identity.residenceCountry && viewerIdentity.residenceCountry) {
+      if (identity.residenceCountry === viewerIdentity.residenceCountry) {
+        reasons.matched.push("Same country");
+        return 12;
+      } else {
+        reasons.missed.push("Different country");
+        return 5;
+      }
+    }
+    if (identity.residenceCountry) {
+      reasons.matched.push("Candidate has country data");
+      return 8;
+    }
+    return 5;
+  }
+
+  return 5;
 };
 
 // ---------------------------------------------------------------------------
-// Main calculation
+// Main Calculation
 // ---------------------------------------------------------------------------
 
-const calculateCompatibilityBreakdown = (viewerPreference, candidate) => {
+const calculateCompatibilityBreakdown = (
+  viewerPreference,
+  candidate,
+  viewerIdentity,
+) => {
   const profile = candidate.profile;
 
   if (!profile) {
@@ -270,13 +312,17 @@ const calculateCompatibilityBreakdown = (viewerPreference, candidate) => {
   }
 
   const { identity, lifestyle, values } = profile;
-
   const reasons = { matched: [], missed: [] };
 
   const identityScore = scoreIdentity(viewerPreference, identity, reasons);
   const valuesScore = scoreValues(viewerPreference, values, reasons);
   const lifestyleScore = scoreLifestyle(viewerPreference, lifestyle, reasons);
-  const locationScore = scoreLocation(viewerPreference, identity, reasons);
+  const locationScore = scoreLocation(
+    viewerPreference,
+    identity,
+    viewerIdentity,
+    reasons,
+  );
 
   // Hard cap at 98 — a perfect stranger cannot be a 100% match
   const score = Math.min(
@@ -294,10 +340,19 @@ const calculateCompatibilityBreakdown = (viewerPreference, candidate) => {
   };
 };
 
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/**
+ * Calculate compatibility score between a viewer and a candidate,
+ * then upsert the result to the database.
+ */
 export const calculateAndUpsertCompatibilityScore = async ({
   viewerId,
   candidate,
   viewerPreference,
+  viewerIdentity = null, // Pass viewer's identity for location matching
   trx = null,
 }) => {
   const [userAId, userBId] = normalizePair(viewerId, candidate.id);
@@ -305,6 +360,7 @@ export const calculateAndUpsertCompatibilityScore = async ({
   const breakdown = calculateCompatibilityBreakdown(
     viewerPreference,
     candidate,
+    viewerIdentity,
   );
 
   return compatibilityScoreDb.upsertByUserPair(
@@ -320,4 +376,63 @@ export const calculateAndUpsertCompatibilityScore = async ({
     },
     trx,
   );
+};
+
+/**
+ * Calculate compatibility score between two users without persisting
+ * (useful for real-time matching or previews).
+ */
+export const calculateCompatibilityScore = ({
+  viewerPreference,
+  candidate,
+  viewerIdentity = null,
+}) => {
+  return calculateCompatibilityBreakdown(
+    viewerPreference,
+    candidate,
+    viewerIdentity,
+  );
+};
+
+/**
+ * Get compatibility score between two users from the database.
+ */
+export const getCompatibilityScore = async ({
+  userAId,
+  userBId,
+  trx = null,
+}) => {
+  const [idA, idB] = normalizePair(userAId, userBId);
+  return compatibilityScoreDb.findByUserPair({
+    userAId: idA,
+    userBId: idB,
+    trx,
+  });
+};
+
+/**
+ * Check if a candidate meets the minimum compatibility threshold.
+ */
+export const meetsMinimumThreshold = (score, minThreshold = 50) => {
+  return score >= minThreshold;
+};
+
+/**
+ * Get compatibility category based on score.
+ */
+export const getCompatibilityCategory = (score) => {
+  if (score >= 80) return "EXCELLENT";
+  if (score >= 65) return "GOOD";
+  if (score >= 50) return "FAIR";
+  if (score >= 35) return "LOW";
+  return "POOR";
+};
+
+export default {
+  normalizePair,
+  calculateAndUpsertCompatibilityScore,
+  calculateCompatibilityScore,
+  getCompatibilityScore,
+  meetsMinimumThreshold,
+  getCompatibilityCategory,
 };

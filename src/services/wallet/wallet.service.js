@@ -12,6 +12,53 @@ export const getOrCreateWallet = async (userId, trx = null) => {
   return walletDb.createForUser(userId, trx);
 };
 
+export const creditCoins = async ({
+  userId,
+  amount,
+  reason,
+  description,
+  metadata = {},
+  trx = null,
+}) => {
+  if (!Number.isInteger(amount) || amount <= 0) {
+    throw new BadRequestError("Credit amount must be a positive integer");
+  }
+
+  const wallet = await getOrCreateWallet(userId, trx);
+
+  const balanceBefore = wallet.balance;
+
+  await walletDb.incrementBalance({
+    walletId: wallet.id,
+    amount,
+    trx,
+  });
+
+  const updatedWallet = await walletDb.findByUserId(userId, trx);
+
+  const balanceAfter = updatedWallet.balance;
+
+  const transaction = await walletDb.createTransaction(
+    {
+      walletId: wallet.id,
+      userId,
+      type: "CREDIT",
+      reason,
+      amount,
+      balanceBefore,
+      balanceAfter,
+      description,
+      metadata,
+    },
+    trx,
+  );
+
+  return {
+    wallet: updatedWallet,
+    transaction,
+  };
+};
+
 export const debitCoins = async ({
   userId,
   amount,
@@ -31,13 +78,20 @@ export const debitCoins = async ({
   }
 
   const balanceBefore = wallet.balance;
-  const balanceAfter = wallet.balance - amount;
 
-  const updatedWallet = await walletDb.updateBalance({
+  const updated = await walletDb.decrementBalance({
     walletId: wallet.id,
-    balance: balanceAfter,
+    amount,
     trx,
   });
+
+  if (!updated) {
+    throw new BadRequestError("Insufficient coin balance");
+  }
+
+  const updatedWallet = await walletDb.findByUserId(userId, trx);
+
+  const balanceAfter = updatedWallet.balance;
 
   const transaction = await walletDb.createTransaction(
     {

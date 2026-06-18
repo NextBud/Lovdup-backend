@@ -163,3 +163,7 @@ export const respondToMatchRequest = async ({ userId, requestId, status }) => {
 
   return handledRequest;
 };
+
+export const getMatchRequestById = async (requestId, trx = null) => {
+  return matchRequestDb.findById(requestId, trx);
+};

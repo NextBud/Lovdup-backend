@@ -18,6 +18,17 @@ export const findUserByEmail = async (email, tx = null) => {
   });
 };
 
+export const findPhoneById = async (userId, trx = null) => {
+  return dbClient(trx).user.findUnique({
+    where: {
+      id: userId,
+    },
+    select: {
+      phone: true,
+    },
+  });
+};
+
 export const findUserById = async (userId, tx = null) => {
   const db = dbClient(tx);
 

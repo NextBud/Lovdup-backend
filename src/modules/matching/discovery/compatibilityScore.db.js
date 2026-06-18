@@ -17,7 +17,7 @@ export const upsertByUserPair = async (
     userAId,
     userBId,
     score,
-    identityScore = 0, // renamed from profileScore
+    identityScore = 0,
     lifestyleScore = 0,
     valuesScore = 0,
     locationScore = 0,

@@ -151,3 +151,45 @@ npx prisma generate
 
 npx prisma format
 
+🌱 Starting seed...
+
+📝 Creating test users...
+
+✅ Created user: sarah@example.com (ID: 44cecbcf-0ee0-439a-aaa1-6cdf4949053b)
+✅ Created profile for: sarah@example.com (ID: 488f8a90-ae1a-4f06-943d-0bc984c46da6)
+✅ Created 3 photos for: sarah@example.com
+✅ Created 2 voice answers for: sarah@example.com
+✅ Created match preference for: sarah@example.com
+✅ Created wallet for: sarah@example.com
+✅ Created user: james@example.com (ID: 976dde58-572c-44ca-ba59-825143a9762b)
+✅ Created profile for: james@example.com (ID: fb34cad1-4bb4-4048-b315-47393da18b85)
+✅ Created 3 photos for: james@example.com
+✅ Created 2 voice answers for: james@example.com
+✅ Created match preference for: james@example.com
+✅ Created wallet for: james@example.com
+
+💝 Creating match between Sarah and James...
+✅ Created match (ID: d8aa7bf6-da7f-4ec6-a6a4-bebd09d11425)
+📨 Creating match requests...
+✅ Created match requests
+📊 Creating compatibility score...
+✅ Created compatibility score
+🎯 Creating match results...
+✅ Created match results
+💬 Creating conversation and messages...
+✅ Created conversation (ID: 74bc1348-da6c-4e6a-a5f7-cc4df6f1b412)
+✅ Created 3 messages
+
+📊 ========== SEEDING COMPLETE! ==========
+👤 Sarah ID: 44cecbcf-0ee0-439a-aaa1-6cdf4949053b
+   Email: sarah@example.com
+   Password: Password123!
+👤 James ID: 976dde58-572c-44ca-ba59-825143a9762b
+   Email: james@example.com
+   Password: Password123!
+💝 Match ID: d8aa7bf6-da7f-4ec6-a6a4-bebd09d11425
+💬 Conversation ID: 74bc1348-da6c-4e6a-a5f7-cc4df6f1b412
+📊 Compatibility Score: 85%
+===========================================
+
+✅ Seed completed successfully!

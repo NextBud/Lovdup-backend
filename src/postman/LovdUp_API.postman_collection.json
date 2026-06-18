@@ -1,0 +1,523 @@
+{
+  "info": {
+    "name": "LovdUp API — Auth & Onboarding",
+    "description": "Complete API documentation for LovdUp authentication and onboarding flow.\n\n## Setup\n1. Import this collection into Postman\n2. Create an environment with:\n   - `BASE_URL` = `http://localhost:5000`\n   - `ACCESS_TOKEN` = (auto-set after login)\n   - `REFRESH_TOKEN` = (auto-set after login)\n3. Run **Register** or **Firebase Auth** first — tokens are saved automatically via test scripts.\n\n## Flow Order\n1. Register or Firebase Auth → tokens saved\n2. GET /onboarding/me → check current state\n3. PUT /onboarding/draft → autosave each step\n4. POST /onboarding/media/photos → upload photos\n5. POST /onboarding/media/voices → upload voice recordings\n6. POST /onboarding/complete → finalize profile\n\n## Auth\nAll protected routes require `Authorization: Bearer {{ACCESS_TOKEN}}`.\nThis is set automatically by the collection-level auth config.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{ACCESS_TOKEN}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    { "key": "BASE_URL", "value": "http://localhost:5000", "type": "string" },
+    { "key": "ACCESS_TOKEN", "value": "", "type": "string" },
+    { "key": "REFRESH_TOKEN", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "🔐 Auth",
+      "description": "Authentication endpoints. Run these first to get tokens.",
+      "item": [
+        {
+          "name": "Register (Email/Password)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.success) {",
+                  "  pm.collectionVariables.set('ACCESS_TOKEN', res.data.accessToken);",
+                  "  pm.collectionVariables.set('REFRESH_TOKEN', res.data.refreshToken);",
+                  "  pm.test('Tokens saved', () => pm.expect(res.data.accessToken).to.be.a('string'));",
+                  "  pm.test('onboardingStatus is NOT_STARTED', () => pm.expect(res.data.onboardingStatus).to.eql('NOT_STARTED'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{BASE_URL}}/auth/password",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"test@lovdup.com\",\n  \"password\": \"Password123!\",\n  \"mode\": \"REGISTER\"\n}"
+            },
+            "description": "Register a new user with email and password.\n\n**Body**\n- `email` string required\n- `password` string required (min 6 chars)\n- `mode` `\"REGISTER\"` | `\"LOGIN\"`\n\n**Returns**\n```json\n{\n  \"user\": { \"id\", \"email\", \"role\" },\n  \"accessToken\": \"...\",\n  \"refreshToken\": \"...\",\n  \"sessionId\": \"...\",\n  \"onboardingStatus\": \"NOT_STARTED\"\n}\n```"
+          },
+          "response": [
+            {
+              "name": "201 Success",
+              "status": "Created",
+              "code": 201,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"user\": {\n      \"id\": \"clx1abc\",\n      \"email\": \"test@lovdup.com\",\n      \"role\": \"USER\"\n    },\n    \"accessToken\": \"eyJhbGci...\",\n    \"refreshToken\": \"rt_abc123...\",\n    \"sessionId\": \"sess_xyz\",\n    \"onboardingStatus\": \"NOT_STARTED\"\n  }\n}"
+            },
+            {
+              "name": "409 Email already exists",
+              "status": "Conflict",
+              "code": 409,
+              "body": "{\n  \"success\": false,\n  \"message\": \"An account with this email already exists.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Login (Email/Password)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.success) {",
+                  "  pm.collectionVariables.set('ACCESS_TOKEN', res.data.accessToken);",
+                  "  pm.collectionVariables.set('REFRESH_TOKEN', res.data.refreshToken);",
+                  "  pm.test('Tokens saved', () => pm.expect(res.data.accessToken).to.be.a('string'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{BASE_URL}}/auth/password",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"test@lovdup.com\",\n  \"password\": \"Password123!\",\n  \"mode\": \"LOGIN\"\n}"
+            },
+            "description": "Login with email and password.\n\nSame endpoint as Register — `mode` controls behaviour."
+          }
+        },
+        {
+          "name": "Firebase Auth (Google / Apple)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.success) {",
+                  "  pm.collectionVariables.set('ACCESS_TOKEN', res.data.accessToken);",
+                  "  pm.collectionVariables.set('REFRESH_TOKEN', res.data.refreshToken);",
+                  "  pm.test('Tokens saved', () => pm.expect(res.data.accessToken).to.be.a('string'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{BASE_URL}}/auth/firebase",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idToken\": \"<firebase_id_token_from_client>\"\n}"
+            },
+            "description": "Exchange a Firebase ID token for a LovdUp session.\nUsed for Google and Apple sign-in.\n\n**How to get an idToken for testing:**\n1. Sign in via Google on the frontend\n2. Copy the token from the network tab or console\n3. Paste it here — tokens expire after 1 hour\n\n**Body**\n- `idToken` string required — Firebase ID token from client SDK"
+          }
+        },
+        {
+          "name": "Get Me (Session Check)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{BASE_URL}}/auth/me",
+            "description": "Returns the current user and their onboarding status.\nCalled by the frontend on every app load to rehydrate session.\n\n**Returns**\n```json\n{\n  \"user\": { \"id\", \"email\", \"role\", \"status\" },\n  \"onboarding\": {\n    \"status\": \"IN_PROGRESS\",\n    \"currentStep\": 5\n  },\n  \"profile\": {\n    \"exists\": false,\n    \"completionPercent\": 0\n  }\n}\n```\n\n🔒 Requires `Authorization: Bearer {{ACCESS_TOKEN}}`"
+          },
+          "response": [
+            {
+              "name": "200 Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"user\": {\n      \"id\": \"clx1abc\",\n      \"email\": \"test@lovdup.com\",\n      \"role\": \"USER\",\n      \"status\": \"ACTIVE\"\n    },\n    \"session\": { \"sessionId\": \"sess_xyz\", \"valid\": true },\n    \"onboarding\": {\n      \"status\": \"IN_PROGRESS\",\n      \"currentStep\": 5\n    },\n    \"profile\": {\n      \"exists\": false,\n      \"completionPercent\": 0\n    }\n  }\n}"
+            },
+            {
+              "name": "401 Invalid session",
+              "status": "Unauthorized",
+              "code": 401,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Session expired or invalid.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Refresh Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.success) {",
+                  "  pm.collectionVariables.set('ACCESS_TOKEN', res.data.accessToken);",
+                  "  pm.collectionVariables.set('REFRESH_TOKEN', res.data.refreshToken);",
+                  "  pm.test('New tokens saved', () => pm.expect(res.data.accessToken).to.be.a('string'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{BASE_URL}}/auth/refresh",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{REFRESH_TOKEN}}\"\n}"
+            },
+            "description": "Rotates the refresh token and returns a new access token.\nThe old refresh token is immediately invalidated.\n\n**Body**\n- `refreshToken` string required"
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{BASE_URL}}/auth/logout",
+            "description": "Revokes the current session only.\nOther devices remain logged in.\n\n🔒 Requires `Authorization: Bearer {{ACCESS_TOKEN}}`"
+          }
+        },
+        {
+          "name": "Logout All Devices",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{BASE_URL}}/auth/logout-all",
+            "description": "Revokes all active sessions across all devices.\n\n🔒 Requires `Authorization: Bearer {{ACCESS_TOKEN}}`"
+          }
+        }
+      ]
+    },
+    {
+      "name": "📋 Onboarding — Core",
+      "description": "Step-by-step profile building flow.\n\nAll routes require a valid access token.\nThe frontend autosaves after every step via PUT /onboarding/draft.",
+      "item": [
+        {
+          "name": "Get My Onboarding State",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{BASE_URL}}/onboarding/me",
+            "description": "Returns the current onboarding progress and saved draft data.\nCalled by the frontend on mount to restore where the user left off.\n\n**Returns**\n```json\n{\n  \"status\": \"IN_PROGRESS\",\n  \"currentStep\": 5,\n  \"completedSections\": [\"basics\"],\n  \"draftData\": {\n    \"profile\": { \"firstName\": \"Ada\", ... },\n    \"completedSteps\": [\"name\", \"birthday\", \"gender\"],\n    \"currentStepId\": \"occupation\"\n  }\n}\n```\n\n🔒 Requires `Authorization: Bearer {{ACCESS_TOKEN}}`"
+          },
+          "response": [
+            {
+              "name": "200 — In progress",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"status\": \"IN_PROGRESS\",\n    \"currentStep\": 5,\n    \"completedSections\": [\"basics\"],\n    \"draftData\": {\n      \"profile\": {\n        \"firstName\": \"Ada\",\n        \"lastName\": \"Obi\",\n        \"birthDate\": \"1995-04-12T00:00:00.000Z\",\n        \"gender\": \"WOMAN\"\n      },\n      \"completedSteps\": [\"name\", \"birthday\", \"gender\", \"occupation\"],\n      \"currentStepId\": \"location\"\n    }\n  }\n}"
+            },
+            {
+              "name": "200 — Not started",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"status\": \"NOT_STARTED\",\n    \"currentStep\": 1,\n    \"currentStepId\": \"name\",\n    \"completedSections\": [],\n    \"draftData\": {\n      \"profile\": {},\n      \"completedSteps\": [],\n      \"currentStepId\": \"name\"\n    }\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Save Draft (Autosave)",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{BASE_URL}}/onboarding/draft",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stepId\": \"location\",\n  \"data\": {\n    \"profile\": {\n      \"firstName\": \"Ada\",\n      \"lastName\": \"Obi\",\n      \"birthDate\": \"1995-04-12T00:00:00.000Z\",\n      \"gender\": \"WOMAN\",\n      \"occupation\": \"Software Engineer\",\n      \"originCountry\": \"Nigeria\",\n      \"residenceCountry\": \"United Kingdom\",\n      \"residenceCity\": \"London\"\n    },\n    \"completedSteps\": [\"name\", \"birthday\", \"gender\", \"occupation\", \"location\"],\n    \"currentStepId\": \"identity\"\n  }\n}"
+            },
+            "description": "Autosaves the current onboarding state to the server.\nCalled by the frontend after every field change (debounced 1.5s).\n\n**Body**\n- `stepId` string — the step just completed\n- `data` object — full draft snapshot:\n  - `data.profile` — all profile fields collected so far\n  - `data.completedSteps` — array of completed step IDs\n  - `data.currentStepId` — where the user currently is\n\n**Step IDs (in order)**\n```\nname → birthday → gender → occupation → location →\nidentity → faith → habits → social → money →\nfinancial_status → children → communication →\ntuesday_vibe → about_me → auth →\nvoice_questions → voice_recording → photos\n```\n\n🔒 Requires `Authorization: Bearer {{ACCESS_TOKEN}}`"
+          },
+          "response": [
+            {
+              "name": "200 Saved",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Progress saved\",\n  \"data\": {\n    \"currentStep\": 6,\n    \"status\": \"IN_PROGRESS\"\n  }\n}"
+            },
+            {
+              "name": "400 Validation error",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{\n  \"success\": false,\n  \"message\": \"stepId is required\"\n}"
+            },
+            {
+              "name": "404 No session",
+              "status": "Not Found",
+              "code": 404,
+              "body": "{\n  \"success\": false,\n  \"message\": \"No onboarding session found. Please restart.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Complete Onboarding",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{BASE_URL}}/onboarding/complete",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Ada\",\n  \"lastName\": \"Obi\",\n  \"birthDate\": \"1995-04-12T00:00:00.000Z\",\n  \"gender\": \"WOMAN\",\n  \"originCountry\": \"Nigeria\",\n  \"residenceCountry\": \"United Kingdom\",\n  \"residenceCity\": \"London\",\n  \"ethnicity\": \"Black/African\",\n  \"languages\": [\"English\", \"Yoruba\"],\n  \"occupation\": \"Software Engineer\",\n  \"religion\": \"Christian\",\n  \"religionImportance\": \"Somewhat important\",\n  \"drinking\": \"Socially\",\n  \"smoking\": \"Never\",\n  \"socialLife\": \"Balanced\",\n  \"fitnessImportance\": \"Very important\",\n  \"moneyStyle\": \"Saver\",\n  \"relocationFeelings\": \"Open to relocating\",\n  \"financialStatus\": \"Stable\",\n  \"childrenPreference\": \"Want children\",\n  \"communicationStyle\": \"Direct\",\n  \"tuesdayVibe\": \"Netflix at home\",\n  \"aboutMe\": \"I'm a software engineer based in London who loves travelling and great food.\"\n}"
+            },
+            "description": "Finalizes the onboarding flow.\nCreates the user's Profile and all sub-models in a single transaction.\nPhotos and voice recordings must be uploaded first via the media endpoints.\n\n**Prerequisites**\n- At least 2 photos uploaded via `POST /onboarding/media/photos`\n- All 5 voice recordings uploaded via `POST /onboarding/media/voices`\n\n**Gender values (Prisma enum)**\n- `\"WOMAN\"` `\"MAN\"` `\"NON_BINARY\"`\n\n**religionImportance values**\n- `\"Very important\"` `\"Somewhat important\"` `\"Not important\"`\n\n**drinking values**\n- `\"Never\"` `\"Socially\"` `\"Frequently\"`\n\n**smoking values**\n- `\"Never\"` `\"Occasionally\"` `\"Frequently\"`\n\n**socialLife values**\n- `\"Homebody\"` `\"Balanced\"` `\"Very social\"`\n\n**fitnessImportance values**\n- `\"Very important\"` `\"Moderately important\"` `\"Not important\"`\n\n**moneyStyle values**\n- `\"Saver\"` `\"Balanced\"` `\"Big spender\"`\n\n**relocationFeelings values**\n- `\"Open to relocating\"` `\"Prefer not to relocate\"` `\"Depends on the person\"`\n\n**financialStatus values**\n- `\"Student\"` `\"Building stability\"` `\"Stable\"` `\"Very comfortable\"`\n\n**childrenPreference values**\n- `\"Want children\"` `\"Open to children\"` `\"Do not want children\"`\n\n**communicationStyle values**\n- `\"Direct\"` `\"Gentle\"` `\"Expressive\"` `\"Reserved\"`\n\n**tuesdayVibe values**\n- `\"Netflix at home\"` `\"Gym & productivity\"` `\"Dinner outside\"` `\"Gaming all night\"` `\"Working late\"`\n\n🔒 Requires `Authorization: Bearer {{ACCESS_TOKEN}}`"
+          },
+          "response": [
+            {
+              "name": "200 Completed",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Onboarding completed\",\n  \"data\": {\n    \"profileId\": \"prof_abc123\",\n    \"message\": \"Welcome to LovdUp.\"\n  }\n}"
+            },
+            {
+              "name": "400 Missing photos",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{\n  \"success\": false,\n  \"message\": \"At least 2 photos are required.\"\n}"
+            },
+            {
+              "name": "400 Missing voice recordings",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{\n  \"success\": false,\n  \"message\": \"All 5 voice recordings are required.\"\n}"
+            },
+            {
+              "name": "400 Validation failure",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{\n  \"success\": false,\n  \"message\": \"\\\"drinking\\\" must be one of [Never, Socially, Frequently]\"\n}"
+            },
+            {
+              "name": "409 Already completed",
+              "status": "Conflict",
+              "code": 409,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Onboarding already completed.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Reset Onboarding (Dev/Admin)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{BASE_URL}}/onboarding/reset",
+            "description": "Wipes onboarding progress and all staged media for the current user.\nOnly works if onboarding is NOT yet completed.\n\n⚠️ This is destructive. Use for development and admin only.\n\n🔒 Requires `Authorization: Bearer {{ACCESS_TOKEN}}`"
+          },
+          "response": [
+            {
+              "name": "200 Reset",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Onboarding reset\",\n  \"data\": { \"reset\": true }\n}"
+            },
+            {
+              "name": "409 Already completed",
+              "status": "Conflict",
+              "code": 409,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Cannot reset a completed onboarding.\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "📸 Onboarding — Media",
+      "description": "Photo and voice upload endpoints.\nBoth must be called before POST /onboarding/complete.\n\nFiles are uploaded to Cloudinary and staged in OnboardingMedia.\nOn completion they are promoted to ProfilePhoto and VoiceAnswer.",
+      "item": [
+        {
+          "name": "Upload Photos",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{BASE_URL}}/onboarding/media/photos",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "photos",
+                  "type": "file",
+                  "description": "Image file (jpg, png, webp). Upload 1–4 files. At least 2 required to complete onboarding."
+                },
+                {
+                  "key": "photos",
+                  "type": "file",
+                  "description": "Second photo (optional but recommended)"
+                }
+              ]
+            },
+            "description": "Uploads onboarding photos to Cloudinary and stages them.\nCan be called multiple times — photos are appended, not replaced.\n\n**Constraints**\n- Minimum 2 photos required before `POST /onboarding/complete`\n- Maximum 4 photos total\n- Accepted types: `image/jpeg`, `image/png`, `image/webp`\n- Field name must be `photos` (multipart/form-data)\n\n**Returns**\n```json\n{\n  \"photos\": [\n    {\n      \"url\": \"https://res.cloudinary.com/...\",\n      \"publicId\": \"lovdup/onboarding/user123/photos/abc\",\n      \"position\": 1\n    }\n  ]\n}\n```\n\n🔒 Requires `Authorization: Bearer {{ACCESS_TOKEN}}`"
+          },
+          "response": [
+            {
+              "name": "201 Uploaded",
+              "status": "Created",
+              "code": 201,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Photos uploaded.\",\n  \"data\": {\n    \"photos\": [\n      {\n        \"url\": \"https://res.cloudinary.com/lovdup/image/upload/v1/lovdup/onboarding/user123/photos/photo1\",\n        \"publicId\": \"lovdup/onboarding/user123/photos/photo1\",\n        \"mimeType\": \"image/jpeg\",\n        \"size\": 204800,\n        \"position\": 1\n      }\n    ]\n  }\n}"
+            },
+            {
+              "name": "400 No files",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Please upload at least one photo.\"\n}"
+            },
+            {
+              "name": "400 Too many",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Maximum 4 photos allowed.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Upload Voice Recordings",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{BASE_URL}}/onboarding/media/voices",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "files",
+                  "type": "file",
+                  "description": "Audio file (webm, mp4, m4a). One file per prompt."
+                },
+                {
+                  "key": "promptIds",
+                  "value": "[\"dream-life\", \"love-language\"]",
+                  "type": "text",
+                  "description": "JSON array of voice prompt IDs. Must match the number of files uploaded."
+                }
+              ]
+            },
+            "description": "Uploads voice recordings to Cloudinary and stages them.\nCan be called once per recording or all at once.\n\n**Constraints**\n- All 5 recordings required before `POST /onboarding/complete`\n- `promptIds` must be a JSON-stringified array matching the file count\n- Each `promptId` must be a valid VoicePrompt ID in the database\n\n**Available Prompt IDs**\n```\ndream-life      → \"What does your ideal life look like in 5 years?\"\nlove-language   → \"What makes you feel loved?\"\nweekend         → \"Describe your perfect weekend.\"\ngreen-flag      → \"What is a green flag in relationships for you?\"\nhard-lesson     → \"What is a hard lesson life taught you?\"\nfun-fact        → \"Tell us a random fun fact about yourself.\"\nrelationship    → \"What kind of relationship are you looking for?\"\n```\n\n**Returns**\n```json\n{\n  \"voices\": [\n    {\n      \"url\": \"https://res.cloudinary.com/...\",\n      \"publicId\": \"...\",\n      \"promptId\": \"dream-life\"\n    }\n  ]\n}\n```\n\n🔒 Requires `Authorization: Bearer {{ACCESS_TOKEN}}`"
+          },
+          "response": [
+            {
+              "name": "201 Uploaded",
+              "status": "Created",
+              "code": 201,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Voice recordings uploaded.\",\n  \"data\": {\n    \"voices\": [\n      {\n        \"url\": \"https://res.cloudinary.com/lovdup/video/upload/v1/lovdup/onboarding/user123/voices/voice1\",\n        \"publicId\": \"lovdup/onboarding/user123/voices/voice1\",\n        \"promptId\": \"dream-life\",\n        \"mimeType\": \"audio/webm\",\n        \"size\": 512000\n      }\n    ]\n  }\n}"
+            },
+            {
+              "name": "400 promptIds mismatch",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Each voice recording must have a corresponding promptId. Got 2 file(s) but 1 promptId(s).\"\n}"
+            },
+            {
+              "name": "400 Invalid prompt",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Invalid voice prompts.\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "🧪 E2E Flow (Run in Order)",
+      "description": "Run these requests in sequence to test the complete onboarding flow from registration to profile completion.\n\nOrder:\n1. Register\n2. Get Me\n3. Save Draft (location step example)\n4. Upload Photos\n5. Upload Voice\n6. Complete Onboarding",
+      "item": [
+        {
+          "name": "1. Register",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "pm.collectionVariables.set('ACCESS_TOKEN', res.data.accessToken);",
+                  "pm.collectionVariables.set('REFRESH_TOKEN', res.data.refreshToken);",
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Token received', () => pm.expect(res.data.accessToken).to.be.a('string'));",
+                  "pm.test('Onboarding NOT_STARTED', () => pm.expect(res.data.onboardingStatus).to.eql('NOT_STARTED'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{BASE_URL}}/auth/password",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"e2e_{{$randomInt}}@lovdup.com\",\n  \"password\": \"Password123!\",\n  \"mode\": \"REGISTER\"\n}"
+            }
+          }
+        },
+        {
+          "name": "2. Get Onboarding State",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const res = pm.response.json();",
+                  "pm.test('Status is NOT_STARTED', () => pm.expect(res.data.status).to.eql('NOT_STARTED'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{BASE_URL}}/onboarding/me"
+          }
+        },
+        {
+          "name": "3. Save Draft",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Progress saved', () => pm.expect(pm.response.json().success).to.be.true);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{BASE_URL}}/onboarding/draft",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stepId\": \"name\",\n  \"data\": {\n    \"profile\": { \"firstName\": \"Ada\", \"lastName\": \"Obi\" },\n    \"completedSteps\": [\"name\"],\n    \"currentStepId\": \"birthday\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "4. Complete Onboarding",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const res = pm.response.json();",
+                  "pm.test('Profile created', () => pm.expect(res.data.profileId).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{BASE_URL}}/onboarding/complete",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Ada\",\n  \"lastName\": \"Obi\",\n  \"birthDate\": \"1995-04-12T00:00:00.000Z\",\n  \"gender\": \"WOMAN\",\n  \"originCountry\": \"Nigeria\",\n  \"residenceCountry\": \"United Kingdom\",\n  \"residenceCity\": \"London\",\n  \"ethnicity\": \"Black/African\",\n  \"languages\": [\"English\", \"Yoruba\"],\n  \"occupation\": \"Software Engineer\",\n  \"religion\": \"Christian\",\n  \"religionImportance\": \"Somewhat important\",\n  \"drinking\": \"Socially\",\n  \"smoking\": \"Never\",\n  \"socialLife\": \"Balanced\",\n  \"fitnessImportance\": \"Very important\",\n  \"moneyStyle\": \"Saver\",\n  \"relocationFeelings\": \"Open to relocating\",\n  \"financialStatus\": \"Stable\",\n  \"childrenPreference\": \"Want children\",\n  \"communicationStyle\": \"Direct\",\n  \"tuesdayVibe\": \"Netflix at home\",\n  \"aboutMe\": \"I am a software engineer based in London who loves travelling and great food. Looking for something real.\"\n}"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

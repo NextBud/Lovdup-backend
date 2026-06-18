@@ -89,10 +89,15 @@ const generateDiscoveryMatches = async (viewerId, trx) => {
     );
   }
 
-  // Debit coins before doing any DB-heavy work so we fail fast if the
-  // wallet is empty.
-  const price = getPrice("discovery.requestMatches");
+  // Get viewer's profile with identity for location matching
+  const viewerProfile = await prisma.profile.findUnique({
+    where: { userId: viewerId },
+    include: { identity: true },
+    transaction: trx,
+  });
 
+  // Debit coins
+  const price = getPrice("discovery.requestMatches");
   await walletService.debitCoins({
     userId: viewerId,
     amount: price.amount,
@@ -102,7 +107,7 @@ const generateDiscoveryMatches = async (viewerId, trx) => {
     trx,
   });
 
-  // Pull candidate pool — gender and age range already applied at DB level.
+  // Pull candidate pool
   const candidates = await discoveryDb.findDiscoveryCandidates({
     viewerId,
     preferredGenders: preference.preferredGenders,
@@ -112,7 +117,7 @@ const generateDiscoveryMatches = async (viewerId, trx) => {
     trx,
   });
 
-  // Score every candidate in the pool.
+  // Score every candidate in the pool
   const scoredCandidates = await Promise.all(
     candidates.map(async (candidate) => {
       const compatibilityScore =
@@ -120,13 +125,13 @@ const generateDiscoveryMatches = async (viewerId, trx) => {
           viewerId,
           candidate,
           viewerPreference: preference,
+          viewerIdentity: viewerProfile?.identity || null,  
           trx,
         });
 
       return { candidate, compatibilityScore };
     }),
   );
-
   // Filter by viewer's minimum score threshold, then take the top N.
   const rankedCandidates = scoredCandidates
     .filter(

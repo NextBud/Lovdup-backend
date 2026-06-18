@@ -30,6 +30,7 @@ export const createMatch = async ({ userAId, userBId, trx = null }) => {
   });
 };
 
+// match.db.js - Update findById to include full relations
 export const findById = async (matchId, trx = null) => {
   const db = dbClient(trx);
 
@@ -37,25 +38,141 @@ export const findById = async (matchId, trx = null) => {
     where: { id: matchId },
     include: {
       userA: {
-        select: {
-          id: true,
-          profile: true,
+        include: {
+          profile: {
+            include: {
+              identity: true,
+              lifestyle: true,
+              values: true,
+              narrative: true,
+            }
+          },
           profilePhotos: {
             where: { status: "ACTIVE" },
             orderBy: [{ isPrimary: "desc" }, { position: "asc" }],
+          },
+          voiceAnswers: {
+            where: { status: "ACTIVE" },
+            include: { voicePrompt: true },
           },
         },
       },
       userB: {
-        select: {
-          id: true,
-          profile: true,
+        include: {
+          profile: {
+            include: {
+              identity: true,
+              lifestyle: true,
+              values: true,
+              narrative: true,
+            }
+          },
           profilePhotos: {
             where: { status: "ACTIVE" },
             orderBy: [{ isPrimary: "desc" }, { position: "asc" }],
           },
+          voiceAnswers: {
+            where: { status: "ACTIVE" },
+            include: { voicePrompt: true },
+          },
         },
       },
+      conversation: {
+        include: {
+          messages: {
+            orderBy: { createdAt: "desc" },
+            take: 5,
+          },
+          lastMessage: true,
+        },
+      },
+      compatibilityScore: true,
+    },
+  });
+};
+
+export const findUserMatches = async ({ 
+  userId, 
+  status = "ACTIVE", 
+  limit = 50, 
+  offset = 0,
+  trx = null 
+}) => {
+  const db = dbClient(trx);
+
+  return db.match.findMany({
+    where: {
+      ...(status && { status }),
+      OR: [{ userAId: userId }, { userBId: userId }],
+    },
+    orderBy: {
+      matchedAt: "desc",
+    },
+    skip: offset,
+    take: limit,
+    include: {
+      userA: {
+        include: {
+          profile: {
+            include: {
+              identity: true,
+              lifestyle: true,
+              values: true,
+              narrative: true,
+            }
+          },
+          profilePhotos: {
+            where: { status: "ACTIVE" },
+            orderBy: [{ isPrimary: "desc" }, { position: "asc" }],
+          },
+          voiceAnswers: {
+            where: { status: "ACTIVE" },
+            include: { voicePrompt: true },
+          },
+        },
+      },
+      userB: {
+        include: {
+          profile: {
+            include: {
+              identity: true,
+              lifestyle: true,
+              values: true,
+              narrative: true,
+            }
+          },
+          profilePhotos: {
+            where: { status: "ACTIVE" },
+            orderBy: [{ isPrimary: "desc" }, { position: "asc" }],
+          },
+          voiceAnswers: {
+            where: { status: "ACTIVE" },
+            include: { voicePrompt: true },
+          },
+        },
+      },
+      conversation: {
+        include: {
+          messages: {
+            orderBy: { createdAt: "desc" },
+            take: 5,
+          },
+          lastMessage: true,
+        },
+      },
+      compatibilityScore: true,
+    },
+  });
+};
+
+export const createBlock = async ({ blockerId, blockedId, reason = null, trx = null }) => {
+  const db = dbClient(trx);
+
+  return db.userBlock.create({
+    data: {
+      blockerId,
+      blockedId,
+      reason,
     },
   });
 };
@@ -85,46 +202,68 @@ export const createMatchIfNotExists = async (
   });
 };
 
-export const findUserMatches = async ({ userId, trx = null }) => {
+export const getUserMatchStats = async (userId, trx = null) => {
   const db = dbClient(trx);
 
-  return db.match.findMany({
-    where: {
-      status: "ACTIVE",
-      OR: [{ userAId: userId }, { userBId: userId }],
-    },
-    orderBy: {
-      matchedAt: "desc",
-    },
-    include: {
-      userA: {
-        select: {
-          id: true,
-          profile: true,
-          profilePhotos: {
-            where: { status: "ACTIVE" },
-            orderBy: [{ isPrimary: "desc" }, { position: "asc" }],
-          },
+  const [total, active, unmatched, blocked, thisMonth, thisWeek] = await Promise.all([
+    db.match.count({
+      where: {
+        OR: [{ userAId: userId }, { userBId: userId }],
+      },
+    }),
+    db.match.count({
+      where: {
+        OR: [{ userAId: userId }, { userBId: userId }],
+        status: "ACTIVE",
+      },
+    }),
+    db.match.count({
+      where: {
+        OR: [{ userAId: userId }, { userBId: userId }],
+        status: "UNMATCHED",
+      },
+    }),
+    db.match.count({
+      where: {
+        OR: [{ userAId: userId }, { userBId: userId }],
+        status: "BLOCKED",
+      },
+    }),
+    db.match.count({
+      where: {
+        OR: [{ userAId: userId }, { userBId: userId }],
+        matchedAt: {
+          gte: new Date(new Date().setMonth(new Date().getMonth() - 1)),
         },
       },
-      userB: {
-        select: {
-          id: true,
-          profile: true,
-          profilePhotos: {
-            where: { status: "ACTIVE" },
-            orderBy: [{ isPrimary: "desc" }, { position: "asc" }],
-          },
+    }),
+    db.match.count({
+      where: {
+        OR: [{ userAId: userId }, { userBId: userId }],
+        matchedAt: {
+          gte: new Date(new Date().setDate(new Date().getDate() - 7)),
         },
       },
-    },
-  });
+    }),
+  ]);
+
+  return {
+    total,
+    active,
+    unmatched,
+    blocked,
+    matchesThisMonth: thisMonth,
+    matchesThisWeek: thisWeek,
+    averageDuration: null, // Calculate if needed
+  };
 };
 
 export const updateMatchStatus = async ({
   matchId,
   status,
   unmatchedAt = null,
+  unmatchedBy = null,
+  unmatchedReason = null,
   trx = null,
 }) => {
   const db = dbClient(trx);
@@ -134,6 +273,9 @@ export const updateMatchStatus = async ({
     data: {
       status,
       unmatchedAt,
+      // Add metadata fields if you add them to schema
+      // unmatchedBy,
+      // unmatchedReason,
     },
   });
 };

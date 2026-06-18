@@ -4,3 +4,4 @@ node_modules
 
 /src/generated/prisma
 ./src/models/schema.prisma
+./src/seed

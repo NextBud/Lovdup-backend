@@ -36,6 +36,7 @@ const birthDateBoundsFromAgeRange = (ageMin, ageMax) => {
  *   - No active match already exists between them
  *   - Neither user has blocked the other
  */
+// discovery.db.js - Fix the blocks filter
 export const findDiscoveryCandidates = async ({
   viewerId,
   preferredGenders = [],
@@ -59,16 +60,12 @@ export const findDiscoveryCandidates = async ({
       isSuspended: false,
 
       profile: {
-        // All sub-relations must exist — a partially completed profile
-        // won't have enough data to score meaningfully.
         isNot: null,
         identity: {
           isNot: null,
-          // Gender filter — applied at DB level
           ...(preferredGenders.length > 0
             ? { gender: { in: preferredGenders } }
             : {}),
-          // Age range filter — applied at DB level via birthDate bounds
           birthDate: {
             gte: oldestBirthDate,
             lte: youngestBirthDate,
@@ -97,26 +94,26 @@ export const findDiscoveryCandidates = async ({
         none: { userAId: viewerId, status: "ACTIVE" },
       },
 
-      // Exclude blocks in both directions
-      blocksReceived: { none: { blockerId: viewerId } },
-      blocksMade: { none: { blockedId: viewerId } },
+      // FIX: Exclude blocks in both directions using UserBlock relations
+      blocksReceived: { 
+        none: { blockerId: viewerId } 
+      },
+      blocksCreated: { 
+        none: { blockedId: viewerId } 
+      },
     },
 
     select: {
       id: true,
-
       profile: {
         select: {
           id: true,
-          // Each sub-relation selected in full so the scoring engine
-          // can read every field without extra queries.
           identity: true,
           lifestyle: true,
           values: true,
           narrative: true,
         },
       },
-
       profilePhotos: {
         where: { status: "ACTIVE" },
         orderBy: [{ isPrimary: "desc" }, { position: "asc" }],
@@ -127,7 +124,6 @@ export const findDiscoveryCandidates = async ({
           isPrimary: true,
         },
       },
-
       voiceAnswers: {
         where: { status: "ACTIVE" },
         select: {
@@ -149,6 +145,7 @@ export const findDiscoveryCandidates = async ({
     take: limit,
   });
 };
+
 
 export const createManyMatchResults = async (payloads, trx = null) => {
   const db = dbClient(trx);

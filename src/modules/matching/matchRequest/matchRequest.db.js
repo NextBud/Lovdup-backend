@@ -17,6 +17,7 @@ export const findUserById = async (userId, trx = null) => {
   });
 };
 
+
 export const findRequestBetweenUsers = async ({
   senderId,
   receiverId,
@@ -36,22 +37,42 @@ export const findById = async (requestId, trx = null) => {
     where: { id: requestId },
     include: {
       sender: {
-        select: {
-          id: true,
-          profile: true,
+        include: {
+          profile: {
+            include: {
+              identity: true,
+              lifestyle: true,
+              values: true,
+              narrative: true,
+            }
+          },
           profilePhotos: {
             where: { status: "ACTIVE" },
             orderBy: [{ isPrimary: "desc" }, { position: "asc" }],
           },
+          voiceAnswers: {
+            where: { status: "ACTIVE" },
+            include: { voicePrompt: true },
+          },
         },
       },
       receiver: {
-        select: {
-          id: true,
-          profile: true,
+        include: {
+          profile: {
+            include: {
+              identity: true,
+              lifestyle: true,
+              values: true,
+              narrative: true,
+            }
+          },
           profilePhotos: {
             where: { status: "ACTIVE" },
             orderBy: [{ isPrimary: "desc" }, { position: "asc" }],
+          },
+          voiceAnswers: {
+            where: { status: "ACTIVE" },
+            include: { voicePrompt: true },
           },
         },
       },
@@ -170,3 +191,51 @@ export const respondToRequest = async ({
     return { handledRequest, match };
   });
 };
+
+            // export const findById = async (requestId, trx = null) => {
+            //   return dbClient(trx).matchRequest.findUnique({
+            //     where: { id: requestId },
+            //     include: {
+            //       sender: {
+            //         include: {
+            //           profile: {
+            //             include: {
+            //               identity: true,
+            //               lifestyle: true,
+            //               values: true,
+            //               narrative: true,
+            //             }
+            //           },
+            //           profilePhotos: {
+            //             where: { status: "ACTIVE" },
+            //             orderBy: [{ isPrimary: "desc" }, { position: "asc" }],
+            //           },
+            //           voiceAnswers: {
+            //             where: { status: "ACTIVE" },
+            //             include: { voicePrompt: true },
+            //           },
+            //         },
+            //       },
+            //       receiver: {
+            //         include: {
+            //           profile: {
+            //             include: {
+            //               identity: true,
+            //               lifestyle: true,
+            //               values: true,
+            //               narrative: true,
+            //             }
+            //           },
+            //           profilePhotos: {
+            //             where: { status: "ACTIVE" },
+            //             orderBy: [{ isPrimary: "desc" }, { position: "asc" }],
+            //           },
+            //           voiceAnswers: {
+            //             where: { status: "ACTIVE" },
+            //             include: { voicePrompt: true },
+            //           },
+            //         },
+            //       },
+            //     },
+            //   });
+            // };

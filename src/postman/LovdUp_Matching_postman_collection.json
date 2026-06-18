@@ -1,0 +1,575 @@
+{
+  "info": {
+    "name": "LovdUp API — Matching",
+    "description": "Matching system for LovdUp: match preferences, discovery, match requests, and matches.\n\n## Prerequisites\n1. Import **LovdUp API — Auth & Onboarding** and complete onboarding for at least two users\n2. Both users must have a completed profile (onboardingCompleted = true)\n3. Both users must have a funded wallet (coins)\n4. Set the following collection variables before running:\n   - `BASE_URL` — e.g. `http://localhost:5000`\n   - `ACCESS_TOKEN` — auto-set after login\n   - `OTHER_USER_ID` — ID of a second user to send/receive requests from\n   - `MATCH_REQUEST_ID` — auto-set after creating a match request\n\n## Flow Order\n1. **Match Preferences** — set what each user is looking for\n2. **Discovery** — request and view discovery matches (costs coins)\n3. **Match Requests** — send, receive, and respond to requests (costs coins to send)\n4. **Matches** — view resulting matches\n\n## Auth\nAll routes require `Authorization: Bearer {{ACCESS_TOKEN}}`.\nThis is set at collection level automatically.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{ACCESS_TOKEN}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    { "key": "BASE_URL", "value": "http://localhost:5000", "type": "string" },
+    { "key": "ACCESS_TOKEN", "value": "", "type": "string" },
+    { "key": "OTHER_USER_ID", "value": "", "type": "string" },
+    { "key": "MATCH_REQUEST_ID", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "⚙️ Match Preferences",
+      "description": "What the authenticated user is looking for in a partner.\nMust be set before requesting discovery matches.\n\nAll fields are required on first save. Subsequent calls update in place (upsert).",
+      "item": [
+        {
+          "name": "Upsert Match Preferences",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{BASE_URL}}/match-preferences",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"preferredGenders\": [\"Woman\"],\n  \"ageMin\": 22,\n  \"ageMax\": 35,\n  \"locationPreference\": \"Same country\",\n  \"religionPreference\": \"Christian\",\n  \"culturePreference\": \"Open to all\",\n  \"childrenPreference\": \"Want children\",\n  \"faithPractice\": \"Somewhat\",\n  \"energyDescription\": \"Calm\",\n  \"communicationStyle\": \"Direct\",\n  \"tuesdayFeeling\": \"Netflix at home\",\n  \"energyMatchStyle\": \"Complement each other\",\n  \"ambitionImportance\": \"Very\",\n  \"socialLevel\": \"Balanced\",\n  \"lifestylePreference\": \"Social drinker ok\",\n  \"financialStabilityPreference\": \"Stable\",\n  \"financialStagePreference\": \"Building\",\n  \"idealPartnerType\": \"Someone grounded, kind, and ambitious\",\n  \"matchVoicePrompt\": \"I want someone I can build with\",\n  \"minCompatibilityScore\": 50\n}"
+            },
+            "description": "Create or update the authenticated user's match preferences.\nThis is an upsert — safe to call multiple times.\n\n**Body fields**\n\n| Field | Type | Notes |\n|-------|------|-------|\n| `preferredGenders` | string[] | `\"Woman\"` \\| `\"Man\"` \\| `\"Non-binary\"` — normalized to enum internally |\n| `ageMin` | int | 18–99 |\n| `ageMax` | int | 18–99, must be ≥ ageMin |\n| `locationPreference` | string | `\"Same city\"` \\| `\"Same country\"` \\| `\"Anywhere\"` |\n| `religionPreference` | string | Specific religion or `\"Open to all\"` |\n| `culturePreference` | string | Free text |\n| `childrenPreference` | string | e.g. `\"Want children\"`, `\"Don't want children\"`, `\"Open\"` |\n| `faithPractice` | string | `\"Not very\"` \\| `\"Somewhat\"` \\| `\"Very\"` |\n| `energyDescription` | string | Free text |\n| `communicationStyle` | string | Free text |\n| `tuesdayFeeling` | string | Free text |\n| `energyMatchStyle` | string | Free text |\n| `ambitionImportance` | string | Free text |\n| `socialLevel` | string | `\"Very social\"` \\| `\"Homebody\"` \\| `\"Balanced\"` |\n| `lifestylePreference` | string | `\"Sober only\"` \\| `\"Social drinker ok\"` \\| `\"Any\"` |\n| `financialStabilityPreference` | string | Free text |\n| `financialStagePreference` | string | Free text |\n| `idealPartnerType` | string | Free text |\n| `matchVoicePrompt` | string | 6–500 chars |\n| `minCompatibilityScore` | int | 0–100, default 50. Candidates below this are not shown. |\n\n🔒 Requires `Authorization: Bearer {{ACCESS_TOKEN}}`"
+          },
+          "response": [
+            {
+              "name": "200 Preferences saved",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Match preferences saved\",\n  \"data\": {\n    \"id\": \"pref_abc123\",\n    \"userId\": \"user_xyz\",\n    \"preferredGenders\": [\"WOMAN\"],\n    \"ageMin\": 22,\n    \"ageMax\": 35,\n    \"locationPreference\": \"Same country\",\n    \"minCompatibilityScore\": 50\n  }\n}"
+            },
+            {
+              "name": "400 ageMin > ageMax",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{\n  \"success\": false,\n  \"message\": \"ageMin must be less than or equal to ageMax\"\n}"
+            },
+            {
+              "name": "400 Invalid gender value",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Gender must be one of: Woman, Man, Non-binary\"\n}"
+            },
+            {
+              "name": "400 Invalid locationPreference",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{\n  \"success\": false,\n  \"message\": \"\\\"locationPreference\\\" must be one of [Same city, Same country, Anywhere]\"\n}"
+            },
+            {
+              "name": "400 matchVoicePrompt too short",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{\n  \"success\": false,\n  \"message\": \"\\\"matchVoicePrompt\\\" length must be at least 6 characters long\"\n}"
+            },
+            {
+              "name": "401 Unauthorized",
+              "status": "Unauthorized",
+              "code": 401,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Unauthorized\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get My Match Preferences",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{BASE_URL}}/match-preferences",
+            "description": "Returns the authenticated user's current match preferences.\nReturns 404 if preferences have not been set yet.\n\n🔒 Requires `Authorization: Bearer {{ACCESS_TOKEN}}`"
+          },
+          "response": [
+            {
+              "name": "200 Preferences found",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": \"pref_abc123\",\n    \"userId\": \"user_xyz\",\n    \"preferredGenders\": [\"WOMAN\"],\n    \"ageMin\": 22,\n    \"ageMax\": 35,\n    \"locationPreference\": \"Same country\",\n    \"religionPreference\": \"Christian\",\n    \"culturePreference\": \"Open to all\",\n    \"childrenPreference\": \"Want children\",\n    \"faithPractice\": \"Somewhat\",\n    \"energyDescription\": \"Calm\",\n    \"communicationStyle\": \"Direct\",\n    \"tuesdayFeeling\": \"Netflix at home\",\n    \"energyMatchStyle\": \"Complement each other\",\n    \"ambitionImportance\": \"Very\",\n    \"socialLevel\": \"Balanced\",\n    \"lifestylePreference\": \"Social drinker ok\",\n    \"financialStabilityPreference\": \"Stable\",\n    \"financialStagePreference\": \"Building\",\n    \"idealPartnerType\": \"Someone grounded, kind, and ambitious\",\n    \"matchVoicePrompt\": \"I want someone I can build with\",\n    \"minCompatibilityScore\": 50,\n    \"createdAt\": \"2024-01-15T10:00:00.000Z\",\n    \"updatedAt\": \"2024-01-15T10:00:00.000Z\"\n  }\n}"
+            },
+            {
+              "name": "404 No preferences set",
+              "status": "Not Found",
+              "code": 404,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Match preferences not found\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "🔍 Discovery",
+      "description": "Discovery generates a curated batch of compatible profiles for the viewer.\n\n**Cost:** Requesting new matches debits coins from the viewer's wallet.\n**How it works:**\n1. Pulls a candidate pool filtered by the viewer's preferred genders and age range\n2. Scores each candidate across identity, values, lifestyle, and location\n3. Filters out candidates below `minCompatibilityScore`\n4. Returns the top 2 ranked candidates\n5. Saves results so the same candidates are not shown again\n\nViewing the latest batch is free — only generating a new batch costs coins.",
+      "item": [
+        {
+          "name": "Request New Discovery Matches",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{BASE_URL}}/discovery/request",
+            "description": "Generates a new batch of compatible candidates for the authenticated user.\n\n**Costs coins.** The price is configured server-side via `pricing.service.js` under `discovery.requestMatches`.\n\n**Prerequisites**\n- User must have match preferences set (`PUT /match-preferences`)\n- User must have sufficient coin balance\n- At least one other completed profile must exist that fits the preference filters\n\n**Returns** up to 2 ranked candidates with compatibility scores.\n\n**Candidates are excluded from future pools** once shown — call this again to get fresh results.\n\n🔒 Requires `Authorization: Bearer {{ACCESS_TOKEN}}`"
+          },
+          "response": [
+            {
+              "name": "200 Candidates returned",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Discovery matches generated\",\n  \"data\": [\n    {\n      \"id\": \"user_abc\",\n      \"profileId\": \"profile_abc\",\n      \"firstName\": \"Amara\",\n      \"lastName\": \"Osei\",\n      \"name\": \"Amara Osei\",\n      \"age\": 28,\n      \"gender\": \"WOMAN\",\n      \"city\": \"London\",\n      \"country\": \"United Kingdom\",\n      \"occupation\": \"Architect\",\n      \"languages\": [\"English\", \"Twi\"],\n      \"aboutMe\": \"Creative soul who loves design and good conversation.\",\n      \"snippet\": \"Creative soul who loves design and good conversation.\",\n      \"photo\": \"https://res.cloudinary.com/lovdup/image/upload/v1/photos/user_abc/1.jpg\",\n      \"photos\": [\n        {\n          \"id\": \"photo_1\",\n          \"url\": \"https://res.cloudinary.com/lovdup/image/upload/v1/photos/user_abc/1.jpg\",\n          \"isPrimary\": true,\n          \"position\": 1\n        }\n      ],\n      \"matchScore\": 82,\n      \"voicePrompt\": {\n        \"id\": \"va_abc\",\n        \"url\": \"https://res.cloudinary.com/lovdup/video/upload/v1/voices/user_abc/1.webm\",\n        \"durationSeconds\": 28,\n        \"transcript\": \"I want someone who challenges me to grow.\",\n        \"question\": \"What makes you feel loved?\",\n        \"category\": \"relationship\"\n      }\n    }\n  ]\n}"
+            },
+            {
+              "name": "200 No candidates found",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Discovery matches generated\",\n  \"data\": []\n}"
+            },
+            {
+              "name": "400 No match preferences set",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Set your match preferences before requesting matches\"\n}"
+            },
+            {
+              "name": "400 Insufficient coins",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Insufficient coin balance\"\n}"
+            },
+            {
+              "name": "401 Unauthorized",
+              "status": "Unauthorized",
+              "code": 401,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Unauthorized\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Latest Discovery Matches",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{BASE_URL}}/discovery/latest",
+            "description": "Returns the most recently generated discovery batch for the viewer.\n\n**Free** — does not debit coins. Used to re-render the current batch on app reload or navigation back.\n\nReturns an empty array if no matches have been generated yet.\n\n🔒 Requires `Authorization: Bearer {{ACCESS_TOKEN}}`"
+          },
+          "response": [
+            {
+              "name": "200 Latest matches",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": \"user_abc\",\n      \"profileId\": \"profile_abc\",\n      \"firstName\": \"Amara\",\n      \"name\": \"Amara Osei\",\n      \"age\": 28,\n      \"matchScore\": 82,\n      \"photo\": \"https://res.cloudinary.com/lovdup/image/upload/v1/photos/user_abc/1.jpg\"\n    }\n  ]\n}"
+            },
+            {
+              "name": "200 No matches yet",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": []\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "💌 Match Requests",
+      "description": "A match request is sent from one user to another after viewing their discovery card.\n\n**Cost:** Sending a request debits coins from the sender's wallet.\n\n**Auto-match logic:** If a reverse PENDING request already exists from the receiver to the sender, both requests are immediately accepted and a Match is created — no manual response needed.\n\n**Expiry:** Requests expire after `MATCH_REQUEST_EXPIRY_DAYS` days (configured in env). Expired requests are handled gracefully on response.",
+      "item": [
+        {
+          "name": "Send Match Request",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.success && res.data?.id) {",
+                  "  pm.collectionVariables.set('MATCH_REQUEST_ID', res.data.id);",
+                  "  pm.test('Request ID saved', () => pm.expect(res.data.id).to.be.a('string'));",
+                  "}",
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{BASE_URL}}/match-requests",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"receiverId\": \"{{OTHER_USER_ID}}\",\n  \"type\": \"LIKE\",\n  \"message\": \"Hey, I think we'd really connect. Your take on growth really resonated with me.\",\n  \"voiceNoteUrl\": null\n}"
+            },
+            "description": "Send a match request to another user.\n\n**Costs coins.** Price configured under `matching.requestMatch`.\n\n**Body fields**\n\n| Field | Type | Notes |\n|-------|------|-------|\n| `receiverId` | string (uuid) | required — target user's ID |\n| `type` | string | `\"LIKE\"` \\| `\"SUPER_LIKE\"` |\n| `message` | string | optional, max 500 chars |\n| `voiceNoteUrl` | string \\| null | optional — URL of an uploaded voice note |\n\n**Auto-match:** If the receiver has already sent a PENDING request to you, both requests are accepted and a Match is created immediately. The response still returns the created request, but its `status` will be `\"ACCEPTED\"`.\n\n**Test script** auto-saves `MATCH_REQUEST_ID` for the respond endpoint.\n\n🔒 Requires `Authorization: Bearer {{ACCESS_TOKEN}}`"
+          },
+          "response": [
+            {
+              "name": "201 Request sent",
+              "status": "Created",
+              "code": 201,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Match request sent\",\n  \"data\": {\n    \"id\": \"req_abc123\",\n    \"senderId\": \"user_me\",\n    \"receiverId\": \"user_other\",\n    \"type\": \"LIKE\",\n    \"status\": \"PENDING\",\n    \"message\": \"Hey, I think we'd really connect.\",\n    \"voiceNoteUrl\": null,\n    \"expiresAt\": \"2024-02-15T10:00:00.000Z\",\n    \"createdAt\": \"2024-01-15T10:00:00.000Z\"\n  }\n}"
+            },
+            {
+              "name": "201 Auto-matched (reverse request existed)",
+              "status": "Created",
+              "code": 201,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Match request sent\",\n  \"data\": {\n    \"id\": \"req_abc123\",\n    \"senderId\": \"user_me\",\n    \"receiverId\": \"user_other\",\n    \"type\": \"LIKE\",\n    \"status\": \"ACCEPTED\",\n    \"message\": null,\n    \"voiceNoteUrl\": null,\n    \"expiresAt\": \"2024-02-15T10:00:00.000Z\",\n    \"createdAt\": \"2024-01-15T10:00:00.000Z\"\n  }\n}"
+            },
+            {
+              "name": "400 Cannot send to yourself",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{\n  \"success\": false,\n  \"message\": \"You cannot send a match request to yourself\"\n}"
+            },
+            {
+              "name": "400 Receiver profile incomplete",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{\n  \"success\": false,\n  \"message\": \"This user does not have a completed profile\"\n}"
+            },
+            {
+              "name": "400 Receiver inactive / suspended",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{\n  \"success\": false,\n  \"message\": \"This user cannot receive match requests\"\n}"
+            },
+            {
+              "name": "400 Insufficient coins",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Insufficient coin balance\"\n}"
+            },
+            {
+              "name": "400 Invalid type",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{\n  \"success\": false,\n  \"message\": \"\\\"type\\\" must be one of [LIKE, SUPER_LIKE]\"\n}"
+            },
+            {
+              "name": "400 Missing receiverId",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{\n  \"success\": false,\n  \"message\": \"\\\"receiverId\\\" is required\"\n}"
+            },
+            {
+              "name": "404 Receiver not found",
+              "status": "Not Found",
+              "code": 404,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Receiver not found\"\n}"
+            },
+            {
+              "name": "409 Request already exists",
+              "status": "Conflict",
+              "code": 409,
+              "body": "{\n  \"success\": false,\n  \"message\": \"You already sent a request to this user\"\n}"
+            },
+            {
+              "name": "401 Unauthorized",
+              "status": "Unauthorized",
+              "code": 401,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Unauthorized\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Sent Requests",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{BASE_URL}}/match-requests/sent",
+            "description": "Returns all match requests sent by the authenticated user, ordered by most recent.\n\nIncludes receiver profile and photos for each request.\n\n🔒 Requires `Authorization: Bearer {{ACCESS_TOKEN}}`"
+          },
+          "response": [
+            {
+              "name": "200 Sent requests",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": \"req_abc123\",\n      \"receiverId\": \"user_other\",\n      \"type\": \"LIKE\",\n      \"status\": \"PENDING\",\n      \"message\": \"Hey, I think we'd really connect.\",\n      \"expiresAt\": \"2024-02-15T10:00:00.000Z\",\n      \"createdAt\": \"2024-01-15T10:00:00.000Z\",\n      \"receiver\": {\n        \"id\": \"user_other\",\n        \"profile\": {\n          \"id\": \"profile_other\",\n          \"identity\": {\n            \"firstName\": \"Amara\",\n            \"lastName\": \"Osei\"\n          }\n        },\n        \"profilePhotos\": [\n          {\n            \"url\": \"https://res.cloudinary.com/lovdup/image/upload/v1/photos/user_other/1.jpg\",\n            \"isPrimary\": true,\n            \"position\": 1\n          }\n        ]\n      }\n    }\n  ]\n}"
+            },
+            {
+              "name": "200 No sent requests",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": []\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Received Requests",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{BASE_URL}}/match-requests/received",
+            "description": "Returns all match requests received by the authenticated user, ordered by most recent.\n\nIncludes sender profile and photos for each request. Use `status` to filter PENDING ones in the UI.\n\n🔒 Requires `Authorization: Bearer {{ACCESS_TOKEN}}`"
+          },
+          "response": [
+            {
+              "name": "200 Received requests",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": \"req_xyz456\",\n      \"senderId\": \"user_other\",\n      \"type\": \"SUPER_LIKE\",\n      \"status\": \"PENDING\",\n      \"message\": null,\n      \"expiresAt\": \"2024-02-15T10:00:00.000Z\",\n      \"createdAt\": \"2024-01-14T09:00:00.000Z\",\n      \"sender\": {\n        \"id\": \"user_other\",\n        \"profile\": {\n          \"id\": \"profile_other\",\n          \"identity\": {\n            \"firstName\": \"Kwame\",\n            \"lastName\": \"Asante\"\n          }\n        },\n        \"profilePhotos\": [\n          {\n            \"url\": \"https://res.cloudinary.com/lovdup/image/upload/v1/photos/user_other/1.jpg\",\n            \"isPrimary\": true,\n            \"position\": 1\n          }\n        ]\n      }\n    }\n  ]\n}"
+            },
+            {
+              "name": "200 No received requests",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": []\n}"
+            }
+          ]
+        },
+        {
+          "name": "Respond to Match Request (Accept)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{BASE_URL}}/match-requests/{{MATCH_REQUEST_ID}}/respond",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"ACCEPTED\"\n}"
+            },
+            "description": "Accept or reject a received match request.\n\nOnly the **receiver** of the request can call this endpoint.\nOnly `PENDING` requests can be responded to.\n\n**Body fields**\n\n| Field | Type | Notes |\n|-------|------|-------|\n| `status` | string | `\"ACCEPTED\"` \\| `\"REJECTED\"` only — `CANCELLED` and `EXPIRED` are system-set |\n\n**On ACCEPTED:** A Match record is created between the two users and a `MATCH_CREATED` event is emitted.\n\n**On REJECTED:** Request is closed. No match created.\n\n**Uses `{{MATCH_REQUEST_ID}}`** — auto-set by the Send Match Request test script.\n\n🔒 Requires `Authorization: Bearer {{ACCESS_TOKEN}}`"
+          },
+          "response": [
+            {
+              "name": "200 Accepted — match created",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Match request accepted\",\n  \"data\": {\n    \"id\": \"req_abc123\",\n    \"senderId\": \"user_other\",\n    \"receiverId\": \"user_me\",\n    \"type\": \"LIKE\",\n    \"status\": \"ACCEPTED\",\n    \"respondedAt\": \"2024-01-16T08:00:00.000Z\"\n  }\n}"
+            },
+            {
+              "name": "200 Rejected",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Match request rejected\",\n  \"data\": {\n    \"id\": \"req_abc123\",\n    \"status\": \"REJECTED\",\n    \"respondedAt\": \"2024-01-16T08:00:00.000Z\"\n  }\n}"
+            },
+            {
+              "name": "400 Request already handled",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{\n  \"success\": false,\n  \"message\": \"This match request has already been handled\"\n}"
+            },
+            {
+              "name": "400 Request expired",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{\n  \"success\": false,\n  \"message\": \"This match request has expired\"\n}"
+            },
+            {
+              "name": "400 Invalid status value",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{\n  \"success\": false,\n  \"message\": \"\\\"status\\\" must be one of [ACCEPTED, REJECTED]\"\n}"
+            },
+            {
+              "name": "403 Not the receiver",
+              "status": "Forbidden",
+              "code": 403,
+              "body": "{\n  \"success\": false,\n  \"message\": \"You cannot respond to this match request\"\n}"
+            },
+            {
+              "name": "404 Request not found",
+              "status": "Not Found",
+              "code": 404,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Match request not found\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Respond to Match Request (Reject)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{BASE_URL}}/match-requests/{{MATCH_REQUEST_ID}}/respond",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"REJECTED\"\n}"
+            },
+            "description": "Reject a received match request. Same endpoint as Accept — only the body differs.\n\nSee **Respond to Match Request (Accept)** for full documentation."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "💞 Matches",
+      "description": "A Match is created when a request is accepted (manually or via auto-match).\n\nMatches enable messaging between the two users.",
+      "item": [
+        {
+          "name": "Get My Matches",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{BASE_URL}}/matches",
+            "description": "Returns all active matches for the authenticated user.\n\nA match appears here once a request has been accepted — either manually via `respond`, or automatically when both users send requests to each other.\n\n🔒 Requires `Authorization: Bearer {{ACCESS_TOKEN}}`"
+          },
+          "response": [
+            {
+              "name": "200 Matches found",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": \"match_abc\",\n      \"userAId\": \"user_me\",\n      \"userBId\": \"user_other\",\n      \"status\": \"ACTIVE\",\n      \"matchedAt\": \"2024-01-16T08:00:00.000Z\",\n      \"partner\": {\n        \"id\": \"user_other\",\n        \"profile\": {\n          \"identity\": {\n            \"firstName\": \"Amara\",\n            \"lastName\": \"Osei\"\n          }\n        },\n        \"profilePhotos\": [\n          {\n            \"url\": \"https://res.cloudinary.com/lovdup/image/upload/v1/photos/user_other/1.jpg\",\n            \"isPrimary\": true\n          }\n        ]\n      }\n    }\n  ]\n}"
+            },
+            {
+              "name": "200 No matches yet",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"data\": []\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "🧪 E2E Flow (Run in Order)",
+      "description": "Complete matching flow between two users. User A discovers and requests User B. User B accepts.\n\n**Setup before running:**\n1. Have two users registered and onboarded\n2. Set `ACCESS_TOKEN` to User A's token\n3. Set `OTHER_USER_ID` to User B's user ID\n4. Ensure both wallets have coins\n\n**Order:**\n1. User A sets preferences\n2. User A requests discovery\n3. User A sends match request to User B\n4. Switch `ACCESS_TOKEN` to User B\n5. User B views received requests\n6. User B accepts the request\n7. Switch back to User A and verify match appears",
+      "item": [
+        {
+          "name": "1. Set Preferences (User A)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Preferences saved', () => pm.expect(pm.response.json().success).to.be.true);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{BASE_URL}}/match-preferences",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"preferredGenders\": [\"Woman\"],\n  \"ageMin\": 22,\n  \"ageMax\": 35,\n  \"locationPreference\": \"Anywhere\",\n  \"religionPreference\": \"Open to all\",\n  \"culturePreference\": \"Open to all\",\n  \"childrenPreference\": \"Open\",\n  \"faithPractice\": \"Not very\",\n  \"energyDescription\": \"Calm\",\n  \"communicationStyle\": \"Direct\",\n  \"tuesdayFeeling\": \"Netflix at home\",\n  \"energyMatchStyle\": \"Complement each other\",\n  \"ambitionImportance\": \"Very\",\n  \"socialLevel\": \"Balanced\",\n  \"lifestylePreference\": \"Any\",\n  \"financialStabilityPreference\": \"Open\",\n  \"financialStagePreference\": \"Open\",\n  \"idealPartnerType\": \"Kind and grounded\",\n  \"matchVoicePrompt\": \"Looking for something real and lasting\",\n  \"minCompatibilityScore\": 30\n}"
+            }
+          }
+        },
+        {
+          "name": "2. Request Discovery (User A)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const res = pm.response.json();",
+                  "pm.test('Returns array', () => pm.expect(res.data).to.be.an('array'));",
+                  "if (res.data.length > 0) {",
+                  "  pm.collectionVariables.set('OTHER_USER_ID', res.data[0].id);",
+                  "  pm.test('OTHER_USER_ID saved from discovery', () => pm.expect(res.data[0].id).to.be.a('string'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{BASE_URL}}/discovery/request",
+            "description": "Test script auto-saves the first candidate's ID as OTHER_USER_ID if not already set."
+          }
+        },
+        {
+          "name": "3. Send Match Request (User A → User B)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const res = pm.response.json();",
+                  "if (res.data?.id) {",
+                  "  pm.collectionVariables.set('MATCH_REQUEST_ID', res.data.id);",
+                  "  pm.test('Request ID saved', () => pm.expect(res.data.id).to.be.a('string'));",
+                  "}",
+                  "pm.test('Status is PENDING or ACCEPTED', () => {",
+                  "  pm.expect(['PENDING', 'ACCEPTED']).to.include(res.data.status);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{BASE_URL}}/match-requests",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"receiverId\": \"{{OTHER_USER_ID}}\",\n  \"type\": \"LIKE\",\n  \"message\": \"I loved your voice note. I think we'd have a great conversation.\"\n}"
+            }
+          }
+        },
+        {
+          "name": "4. View Received Requests (User B)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const res = pm.response.json();",
+                  "pm.test('Has received requests', () => pm.expect(res.data).to.be.an('array').that.is.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{BASE_URL}}/match-requests/received",
+            "description": "Switch ACCESS_TOKEN to User B before running this step."
+          }
+        },
+        {
+          "name": "5. Accept Request (User B)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const res = pm.response.json();",
+                  "pm.test('Status is ACCEPTED', () => pm.expect(res.data.status).to.eql('ACCEPTED'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{BASE_URL}}/match-requests/{{MATCH_REQUEST_ID}}/respond",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"ACCEPTED\"\n}"
+            },
+            "description": "ACCESS_TOKEN must still be User B's token."
+          }
+        },
+        {
+          "name": "6. View Matches (User A)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const res = pm.response.json();",
+                  "pm.test('Match exists', () => pm.expect(res.data).to.be.an('array').that.is.not.empty);",
+                  "pm.test('Match is ACTIVE', () => pm.expect(res.data[0].status).to.eql('ACTIVE'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{BASE_URL}}/matches",
+            "description": "Switch ACCESS_TOKEN back to User A. Verify the match appears."
+          }
+        }
+      ]
+    }
+  ]
+}

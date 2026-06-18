@@ -1,6 +1,16 @@
 import app  from "./src/server/server.js";
 import { env } from "./src/lib/env.js";
 import prisma from "./src/config/prisma.js";
+import http from "http";
+import { initializeSocket } from "./src/socket/index.js";
+
+const server = http.createServer(app);
+
+initializeSocket(server);
+
+server.listen(env.port, () => {
+  console.log(`[Server] Running on port ${env.port} (${env.nodeEnv})`);
+});
 
 const startServer = async () => {
   try {

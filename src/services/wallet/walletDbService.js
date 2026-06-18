@@ -63,6 +63,39 @@ export const updateBalance = async ({ walletId, balance, trx = null }) => {
   });
 };
 
+export const decrementBalance = async ({ walletId, amount, trx = null }) => {
+  const db = dbClient(trx);
+
+  const result = await db.wallet.updateMany({
+    where: {
+      id: walletId,
+      balance: {
+        gte: amount,
+      },
+    },
+    data: {
+      balance: {
+        decrement: amount,
+      },
+    },
+  });
+
+  return result.count;
+};
+
+export const incrementBalance = async ({ walletId, amount, trx = null }) => {
+  const db = dbClient(trx);
+
+  return db.wallet.update({
+    where: { id: walletId },
+    data: {
+      balance: {
+        increment: amount,
+      },
+    },
+  });
+};
+
 export const createTransaction = async (payload, trx = null) => {
   const db = dbClient(trx);
 
