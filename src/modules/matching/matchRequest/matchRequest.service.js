@@ -1,5 +1,5 @@
 import { getPrice } from "../../../config/pricing.service.js";
-import * as walletService from "../../../services/wallet/wallet.service.js";
+import * as walletService from "../../../modules/finance/wallet/walletDbService.js";
 import * as matchRequestDb from "./matchRequest.db.js";
 import * as matchDb from "../match/match.db.js";
 import { eventBus } from "../../../events/eventBus.js";
@@ -11,6 +11,10 @@ import {
   ForbiddenError,
   NotFoundException,
 } from "../../../classes/errorClasses.js";
+import {
+  WalletTransactionReason,
+  WalletReferenceType,
+} from "../../../modules/finance/wallet/wallet.constants.js";
 
 const normalizePair = (a, b) => [a, b].sort();
 
@@ -81,15 +85,23 @@ export const createMatchRequest = async (senderId, payload) => {
         expiresAt: getMatchRequestExpiryDate(),
       },
       reverseRequestId: shouldAutoMatch ? reverseRequest.id : null,
-      debitCoins: (trx) =>
-        walletService.debitCoins({
+      debitCoins: async (trx) => {
+        // ✅ Updated wallet call with new method signature
+        await walletService.debitCoins({
           userId: senderId,
-          amount: price.amount,
-          reason: price.action,
-          description: price.description,
-          metadata: { receiverId, type },
-          trx,
-        }),
+          coins: price.amount, // ✅ Changed from 'amount' to 'coins'
+          reason: WalletTransactionReason.REQUEST_NEW_MATCHES, // ✅ Using constant
+          referenceType: WalletReferenceType.MATCH, // ✅ Using constant
+          referenceId: null, // Will be set after match is created
+          metadata: {
+            receiverId,
+            requestType: type,
+            price: price.amount,
+            description: price.description, // Keep description in metadata
+          },
+          db: trx, // ✅ Changed from 'trx' to 'db'
+        });
+      },
       createMatch: matchDb.createMatchIfNotExists,
       normalizePair,
     });

@@ -1,7 +1,7 @@
 import prisma from "../../config/prisma.js";
 import * as conversationDb from "./conversation.db.js";
 import * as blockService from "../block/block.service.js";
-import * as walletService from "../../services/wallet/wallet.service.js";
+import * as walletService from "../finance/wallet/wallet.service.js";
 import { findPhoneById } from "../../services/user/userDbService.js";
 import { getPrice } from "../../config/pricing.service.js";
 import { eventBus } from "../../events/eventBus.js";
@@ -11,44 +11,40 @@ import {
   ForbiddenError,
   NotFoundException,
 } from "../../classes/errorClasses.js";
+import {
+  WalletTransactionReason,
+  WalletReferenceType,
+} from "../finance/wallet/wallet.constants.js";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-// RECONCILED: previously CONTACT/stage-4 and stage-5 disagreed across files
-// (contracts.js and db.js already treated 5 as the contact stage; this file
-// and conversation.stage.js still said 4). Stage 4's real label is a
-// placeholder pending confirmation — see conversation.stage.js TODO.
 const STAGE_META = {
   2: {
     label: "voice messages",
     priceKey: "conversation.unlockStage2",
+    reason: WalletTransactionReason.UNLOCK_STAGE_2,
   },
-
   3: {
     label: "photo sharing",
     priceKey: "conversation.unlockStage3",
+    reason: WalletTransactionReason.UNLOCK_STAGE_3,
   },
-
   4: {
     label: "deeper conversation",
     priceKey: "conversation.unlockStage4",
+    reason: WalletTransactionReason.UNLOCK_STAGE_4,
   },
-
   5: {
     label: "contact exchange",
     priceKey: "conversation.unlockStage5",
+    reason: WalletTransactionReason.UNLOCK_STAGE_5,
   },
 };
 
-// RECONCILED: CONTACT removed from sendable types. Per prior work, contact
-// info is revealed passively once both sides unlock stage 5 (see
-// applyStageUnlock in conversation.db.js), not sent as a message. Surfaced
-// instead via getConversation's `partnerContact` field below.
 const VALID_MESSAGE_TYPES = ["TEXT", "VOICE", "PHOTO"];
 
-// Minimum stage required to send each message type.
 const MESSAGE_STAGE_REQUIREMENT = {
   TEXT: 1,
   VOICE: 2,
@@ -59,10 +55,6 @@ const MESSAGE_STAGE_REQUIREMENT = {
 // Formatters
 // ---------------------------------------------------------------------------
 
-/**
- * Format a conversation row for the ChatsList feed.
- * Picks the partner (the user who is not the viewer) from match.userA/userB.
- */
 const formatConversationForList = (conversation, viewerId) => {
   const { match, lastMessage, stage } = conversation;
 
@@ -92,10 +84,6 @@ const formatConversationForList = (conversation, viewerId) => {
   };
 };
 
-/**
- * Produce the short preview shown in the ChatsList row.
- * Never exposes contactValue — shows a generic label instead.
- */
 const formatMessagePreview = (message) => {
   if (!message) return null;
 
@@ -117,10 +105,6 @@ const formatMessagePreview = (message) => {
   };
 };
 
-/**
- * Format a full message for socket broadcast or REST response.
- * contactValue is included here — it's the receiver's job to store/display it.
- */
 export const formatMessage = (message) => {
   if (message.type === "SYSTEM") {
     return {
@@ -152,13 +136,6 @@ export const formatMessage = (message) => {
 // Guards
 // ---------------------------------------------------------------------------
 
-/**
- * Resolve the viewer's participant role (A or B) and throw if they are not
- * a participant in this conversation.
- *
- * Exported so conversation.media.js can run the same check before an
- * upload instead of duplicating it.
- */
 export const assertParticipant = (conversation, userId) => {
   const role = conversationDb.resolveParticipantRole(conversation, userId);
   if (!role) {
@@ -167,12 +144,6 @@ export const assertParticipant = (conversation, userId) => {
   return role;
 };
 
-/**
- * Throw if the conversation's current stage does not allow this message type.
- *
- * Exported so conversation.media.js can gate uploads by stage before
- * spending a Cloudinary call on a request that would be rejected anyway.
- */
 export const assertStageAllowsMessageType = (conversation, type) => {
   const required = MESSAGE_STAGE_REQUIREMENT[type];
   if (required === undefined) {
@@ -186,9 +157,6 @@ export const assertStageAllowsMessageType = (conversation, type) => {
   }
 };
 
-/**
- * Throw if the user has already paid for this stage unlock on this conversation.
- */
 const assertNotAlreadyUnlocked = (conversation, role, targetStage) => {
   const flagField = `user${role}Stage${targetStage}`;
   if (conversation[flagField] === true) {
@@ -198,10 +166,6 @@ const assertNotAlreadyUnlocked = (conversation, role, targetStage) => {
   }
 };
 
-/**
- * Throw if targetStage is not the next stage to unlock.
- * Users must unlock stages in order — can't skip from 1 to 3.
- */
 const assertSequentialUnlock = (conversation, targetStage) => {
   if (targetStage !== conversation.stage + 1) {
     throw new BadRequestError(
@@ -232,21 +196,11 @@ const buildPartnerUnlocks = (conversation, partnerRole) => ({
 // Public API
 // ---------------------------------------------------------------------------
 
-/**
- * GET /conversations
- * Returns all conversations for the viewer, formatted for ChatsList.
- */
 export const getConversations = async (userId) => {
   const conversations = await conversationDb.findAllForUser(userId);
   return conversations.map((c) => formatConversationForList(c, userId));
 };
 
-/**
- * GET /conversations/:conversationId
- * Returns conversation metadata + first page of messages (newest-first).
- * Also marks any unread messages as read (mirrors socket join behaviour).
- * Pass ?cursor=<messageId> for older pages.
- */
 export const getConversation = async (
   conversationId,
   userId,
@@ -288,9 +242,6 @@ export const getConversation = async (
   const partnerReady =
     nextStage <= 5 ? (partnerUnlocks[`stage${nextStage}`] ?? false) : false;
 
-  // RECONCILED: contact is no longer a message type you "send" — once both
-  // sides have unlocked stage 5, the partner's contact value is surfaced
-  // here passively instead.
   let partnerContact = null;
   if (conversation.contactRevealed) {
     const partnerId =
@@ -318,12 +269,8 @@ export const getConversation = async (
 };
 
 /**
- * POST /conversations/:conversationId/unlock
- * Body: { targetStage: 2|3|4|5 }
- *
- * Debits coins, flips the user's flag, and advances the stage if both paid.
- * STAGE_UNLOCK_PAID fires after a successful payment (regardless of whether
- * the stage advanced). STAGE_UNLOCKED fires only when both sides have paid.
+ * Unlock a conversation stage
+ * Uses the new wallet service with proper transaction handling
  */
 export const unlockStage = async (conversationId, userId, targetStage) => {
   if (![2, 3, 4, 5].includes(targetStage)) {
@@ -339,28 +286,34 @@ export const unlockStage = async (conversationId, userId, targetStage) => {
   const role = assertParticipant(conversation, userId);
 
   assertSequentialUnlock(conversation, targetStage);
-
   assertNotAlreadyUnlocked(conversation, role, targetStage);
-
   await blockService.assertConversationNotBlocked(conversation);
 
   const meta = STAGE_META[targetStage];
   const price = getPrice(meta.priceKey);
 
+  // Use Prisma transaction to ensure all operations are atomic
   const result = await prisma.$transaction(
     async (trx) => {
+      // 1. Debit coins using the wallet service
+      // The wallet service will handle the transaction internally
+      // and create the appropriate ledger entry
       await walletService.debitCoins({
         userId,
         amount: price.amount,
-        reason: price.action,
-        description: price.description,
+        reason: meta.reason,
+        referenceType: WalletReferenceType.CONVERSATION,
+        referenceId: conversationId,
         metadata: {
           conversationId,
           targetStage,
+          stageLabel: meta.label,
+          price: price.amount,
         },
-        trx,
+        db: trx, // Pass the transaction client
       });
 
+      // 2. Create unlock record
       await conversationDb.createUnlockRecord(
         {
           conversationId,
@@ -370,6 +323,7 @@ export const unlockStage = async (conversationId, userId, targetStage) => {
         trx,
       );
 
+      // 3. Apply stage unlock and check if stage advances
       const unlockResult = await conversationDb.applyStageUnlock(
         {
           conversationId,
@@ -382,6 +336,7 @@ export const unlockStage = async (conversationId, userId, targetStage) => {
       return {
         ...unlockResult,
         role,
+        price: price.amount,
       };
     },
     {
@@ -389,10 +344,12 @@ export const unlockStage = async (conversationId, userId, targetStage) => {
     },
   );
 
+  // Emit events (outside transaction)
   eventBus.emit(EVENT_TYPES.STAGE_UNLOCK_REQUESTED, {
     conversationId,
     targetStage,
     userId,
+    price: result.price,
   });
 
   if (result.didAdvance) {
@@ -408,14 +365,10 @@ export const unlockStage = async (conversationId, userId, targetStage) => {
     didAdvance: result.didAdvance,
     unlockedStage: result.unlockedStage,
     myUnlocks: buildMyUnlocks(result.conversation, result.role),
+    price: result.price,
   };
 };
 
-
-/**
- * Called by the Socket.IO join_conversation handler.
- * Validates access, joins the socket room, and marks unread messages as read.
- */
 export const joinConversation = async (conversationId, userId) => {
   const conversation = await conversationDb.findById(conversationId);
 
@@ -424,7 +377,6 @@ export const joinConversation = async (conversationId, userId) => {
   }
 
   assertParticipant(conversation, userId);
-
   await blockService.assertConversationNotBlocked(conversation);
 
   const result = await conversationDb.markMessagesRead(conversationId, userId);
@@ -440,13 +392,6 @@ export const joinConversation = async (conversationId, userId) => {
   return conversation;
 };
 
-/**
- * Called by the Socket.IO send_message handler (and the REST controller).
- * Validates the message type against the conversation stage, then persists.
- *
- * RECONCILED: CONTACT is no longer a sendable type. Contact reveal is now
- * passive — see getConversation's `partnerContact` field.
- */
 export const sendMessage = async (
   conversationId,
   senderId,
@@ -463,9 +408,7 @@ export const sendMessage = async (
   }
 
   assertParticipant(conversation, senderId);
-
   assertStageAllowsMessageType(conversation, type);
-
   await blockService.assertConversationNotBlocked(conversation);
 
   if (type === "TEXT" && !body?.trim()) {
@@ -502,10 +445,6 @@ export const sendMessage = async (
   return formatted;
 };
 
-/**
- * Called by the Socket.IO mark_read handler.
- * Marks all unread messages from the other participant as read.
- */
 export const markRead = async (conversationId, userId) => {
   const conversation = await conversationDb.findById(conversationId);
 
@@ -528,10 +467,6 @@ export const markRead = async (conversationId, userId) => {
   return result;
 };
 
-/**
- * Called by the MATCH_CREATED event listener.
- * Creates the Conversation record and posts the opening system message.
- */
 export const createConversationForMatch = async (matchId) => {
   const conversation = await conversationDb.createForMatch(matchId);
 

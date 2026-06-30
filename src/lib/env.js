@@ -28,4 +28,5 @@ export const env = {
     appId: process.env.FIREBASE_APP_ID,
     apiKey: process.env.FIREBASE_API_KEY,
   },
+  
 };

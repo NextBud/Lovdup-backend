@@ -33,6 +33,7 @@
     "react-router-dom": "^7.15.1",
     "socket.io": "^4.7.2",
     "socket.io-client": "^4.7.2",
+    "stripe": "^22.3.0",
     "use-audio-recorder": "^0.1.0",
     "uuid": "^14.0.0",
     "zod": "^4.4.3",

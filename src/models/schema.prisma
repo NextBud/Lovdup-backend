@@ -532,25 +532,69 @@ model Wallet {
   transactions WalletTransaction[]
 }
 
+model CoinPurchase {
+  id                String             @id @default(uuid())
+
+  userId            String
+
+  provider          PaymentProvider
+
+  providerReference String?            @unique
+
+  packageId         String
+
+  amountPaid        Decimal            @db.Decimal(10,2)
+
+  currency          String
+
+  coinsPurchased    Int
+
+  status            CoinPurchaseStatus @default(PENDING)
+
+  metadata          Json?
+
+  completedAt       DateTime?
+
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([provider])
+  @@index([status])
+}
+
+
 model WalletTransaction {
   id            String                  @id @default(uuid())
+
   walletId      String
   userId        String
+
   type          WalletTransactionType
   reason        WalletTransactionReason
+
   amount        Int
+
   balanceBefore Int
   balanceAfter  Int
-  description   String?
-  metadata      Json?
-  createdAt     DateTime                @default(now())
 
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  referenceType WalletReferenceType?
+  referenceId   String?
+
+  metadata      Json?
+
+  createdAt     DateTime @default(now())
+
   wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([walletId])
   @@index([userId])
   @@index([reason])
+  @@index([referenceType])
+  @@index([referenceId])
   @@index([createdAt])
 }
 
@@ -672,13 +716,56 @@ enum WalletTransactionType {
   DEBIT
 }
 
+enum WalletReferenceType {
+  PURCHASE
+  CONVERSATION
+  MATCH
+  MESSAGE
+  PROFILE
+  ADMIN
+  SYSTEM
+}
+
+enum CoinPurchaseStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentProvider {
+  STRIPE
+  PAYPAL
+}
+
 enum WalletTransactionReason {
+  WELCOME_BONUS
+
+  COIN_PURCHASE
+
   REQUEST_NEW_MATCHES
+
   START_STAGE_1
-  START_STAGE_2
-  START_STAGE_3
-  START_STAGE_4
+
+  UNLOCK_STAGE_2
+  UNLOCK_STAGE_3
+  UNLOCK_STAGE_4
   UNLOCK_STAGE_5
+
+  SEND_VOICE_QUESTION
+
+  SEND_VOICE_NOTE
+
+  PROFILE_VIEW
+
   COMPLIMENT_PICTURE
+
+  INVITE_GUEST
+
+  REFUND
+
+  PROMOTIONAL_BONUS
+
   ADMIN_ADJUSTMENT
 }
