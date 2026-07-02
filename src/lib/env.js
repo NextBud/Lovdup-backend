@@ -5,6 +5,10 @@ const requiredEnv = [
   "DATABASE_URL",
   "JWT_SECRET",
   "FIREBASE_SERVICE_ACCOUNT_BASE64",
+  "STRIPE_SECRET_KEY",
+  "STRIPE_WEBHOOK_SECRET",
+  "PAYMENT_SUCCESS_URL",
+  "PAYMENT_CANCEL_URL",
 ];
 
 for (const key of requiredEnv) {
@@ -28,5 +32,18 @@ export const env = {
     appId: process.env.FIREBASE_APP_ID,
     apiKey: process.env.FIREBASE_API_KEY,
   },
-  
+  payment: {
+    successUrl: process.env.PAYMENT_SUCCESS_URL,
+    cancelUrl: process.env.PAYMENT_CANCEL_URL,
+    providers: {
+      stripe: {
+        secretKey: process.env.STRIPE_SECRET_KEY,
+        webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
+      },
+      paypal: {
+        clientId: process.env.PAYPAL_CLIENT_ID,
+        clientSecret: process.env.PAYPAL_CLIENT_SECRET,
+      },
+    },
+  },
 };

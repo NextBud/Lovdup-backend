@@ -5,7 +5,7 @@ import { StripeProvider } from "../stripe/stripe.provider.js";
 class PaymentProviderFactory {
   constructor() {
     this.providers = new Map([
-      [PaymentProviderEnum.STRIPE, new StripeProvider()],
+      [PaymentProvider.STRIPE, new StripeProvider()],
       // [PaymentProviderEnum.PAYPAL, new PaypalProvider()],
     ]);
   }

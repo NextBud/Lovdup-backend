@@ -58,14 +58,15 @@ model User {
   refreshSessions       RefreshSession[]
   voiceAnswers          VoiceAnswer[]
   wallet                Wallet?
+  coinPurchases         CoinPurchase[] // <-- Added this line to fix P1012 Error
   walletTransactions    WalletTransaction[]
   messages              Message[]
   blocksCreated         UserBlock[]           @relation("UserBlocksCreated")
   blocksReceived        UserBlock[]           @relation("UserBlocksReceived")
 
   // Direct Conversation relationship tracking
-  conversationsAsUserA  Conversation[]        @relation("ConversationUserA")
-  conversationsAsUserB  Conversation[]        @relation("ConversationUserB")
+  conversationsAsUserA Conversation[] @relation("ConversationUserA")
+  conversationsAsUserB Conversation[] @relation("ConversationUserB")
 }
 
 model ConversationUnlock {
@@ -75,8 +76,8 @@ model ConversationUnlock {
   stage          Int
   createdAt      DateTime @default(now())
 
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([conversationId, userId, stage])
   @@index([conversationId])
@@ -89,7 +90,7 @@ model AuthProvider {
   userId      String
   provider    AuthProviderType
   providerUid String
-  linkedAt    DateTime         @default(now()) 
+  linkedAt    DateTime         @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -225,8 +226,8 @@ model ProfileValues {
   hasChildren         Boolean  @default(false)
   personalCommStyle   String
   personalTuesdayVibe String
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 }
@@ -283,7 +284,7 @@ model VoiceAnswer {
   userId              String
   profileId           String
   voicePromptId       String
-  url                 String                
+  url                 String
   publicId            String
   mimeType            String
   size                Int
@@ -389,20 +390,20 @@ model MatchRequest {
 }
 
 model Match {
-  id          String      @id @default(uuid())
-  userAId     String
-  userBId     String
-  status      MatchStatus @default(ACTIVE)
-  matchedAt   DateTime    @default(now())
-  unmatchedAt DateTime?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  unmatchedBy      String?
-  unmatchedReason  String?
+  id              String        @id @default(uuid())
+  userAId         String
+  userBId         String
+  status          MatchStatus   @default(ACTIVE)
+  matchedAt       DateTime      @default(now())
+  unmatchedAt     DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  unmatchedBy     String?
+  unmatchedReason String?
 
   userA        User          @relation("MatchUserA", fields: [userAId], references: [id], onDelete: Cascade)
   userB        User          @relation("MatchUserB", fields: [userBId], references: [id], onDelete: Cascade)
-  conversation Conversation? 
+  conversation Conversation?
 
   @@unique([userAId, userBId])
   @@index([userAId])
@@ -411,28 +412,25 @@ model Match {
 }
 
 model MatchResult {
-  id                   String            @id @default(uuid())
-
+  id                   String @id @default(uuid())
   viewerId             String
   candidateId          String
-
   compatibilityScoreId String?
 
-  rank                 Int?
-  score                Int?
+  rank  Int?
+  score Int?
 
-  reason               MatchResultReason
+  reason MatchResultReason
 
-  shownAt              DateTime          @default(now())
-  actedAt              DateTime?
-  dismissed            Boolean           @default(false)
+  shownAt   DateTime  @default(now())
+  actedAt   DateTime?
+  dismissed Boolean   @default(false)
 
-  candidate            User                @relation("CandidateMatchResults", fields: [candidateId], references: [id], onDelete: Cascade)
-  compatibilityScore   CompatibilityScore? @relation(fields: [compatibilityScoreId], references: [id])
-  viewer               User                @relation("ViewerMatchResults", fields: [viewerId], references: [id], onDelete: Cascade)
+  candidate          User                @relation("CandidateMatchResults", fields: [candidateId], references: [id], onDelete: Cascade)
+  compatibilityScore CompatibilityScore? @relation(fields: [compatibilityScoreId], references: [id])
+  viewer             User                @relation("ViewerMatchResults", fields: [viewerId], references: [id], onDelete: Cascade)
 
   @@unique([viewerId, candidateId])
-
   @@index([viewerId])
   @@index([candidateId])
   @@index([reason])
@@ -444,43 +442,34 @@ model MatchResult {
 // ---------------------------------------------------------------------------
 
 model Conversation {
-  id                String @id @default(uuid())
-
-  matchId           String @unique
-
-  userAId           String?
-  userBId           String?
-
-  stage             Int    @default(1)
-
-  userAStage2       Boolean @default(false)
-  userBStage2       Boolean @default(false)
-
-  userAStage3       Boolean @default(false)
-  userBStage3       Boolean @default(false)
-
-  userAStage4       Boolean @default(false)
-  userBStage4       Boolean @default(false)
+  id       String @id @default(uuid())
+  matchId  String @unique
+  userAId  String?
+  userBId  String?
+  stage    Int    @default(1)
+  
+  userAStage2 Boolean @default(false)
+  userBStage2 Boolean @default(false)
+  userAStage3 Boolean @default(false)
+  userBStage3 Boolean @default(false)
+  userAStage4 Boolean @default(false)
+  userBStage4 Boolean @default(false)
 
   stageStartedAt    DateTime @default(now())
-
   lastActivityAt    DateTime @default(now())
-  status ConversationStatus  @default(ACTIVE)
-
-  contactRevealed   Boolean @default(false)
+  status            ConversationStatus @default(ACTIVE)
+  contactRevealed   Boolean  @default(false)
   contactRevealedAt DateTime?
 
-  lastMessageAt     DateTime?
-  lastMessageId     String? @unique
+  lastMessageAt DateTime?
+  lastMessageId String?   @unique
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
   match               Match                @relation(fields: [matchId], references: [id], onDelete: Cascade)
   messages            Message[]
   lastMessage         Message?             @relation("ConversationLastMessage", fields: [lastMessageId], references: [id])
   conversationUnlocks ConversationUnlock[]
-
-  
   userA               User?                @relation("ConversationUserA", fields: [userAId], references: [id])
   userB               User?                @relation("ConversationUserB", fields: [userBId], references: [id])
 
@@ -495,12 +484,10 @@ model Conversation {
 }
 
 model Message {
-  id             String        @id @default(uuid())
+  id             String   @id @default(uuid())
   conversationId String
-
   senderId       String?
-  sender         User?         @relation(fields: [senderId], references: [id], onDelete: Cascade)
-
+  sender         User?    @relation(fields: [senderId], references: [id], onDelete: Cascade)
   type           MessageType
   body           String?
   voiceUrl       String?
@@ -508,7 +495,7 @@ model Message {
   photoUrl       String?
   contactValue   String?
   readAt         DateTime?
-  createdAt      DateTime      @default(now())
+  createdAt      DateTime @default(now())
 
   conversation   Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   lastMessageFor Conversation? @relation("ConversationLastMessage")
@@ -534,27 +521,16 @@ model Wallet {
 
 model CoinPurchase {
   id                String             @id @default(uuid())
-
   userId            String
-
   provider          PaymentProvider
-
   providerReference String?            @unique
-
   packageId         String
-
-  amountPaid        Decimal            @db.Decimal(10,2)
-
+  amountPaid        Decimal            @db.Decimal(10, 2)
   currency          String
-
   coinsPurchased    Int
-
   status            CoinPurchaseStatus @default(PENDING)
-
   metadata          Json?
-
   completedAt       DateTime?
-
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
 
@@ -565,27 +541,19 @@ model CoinPurchase {
   @@index([status])
 }
 
-
 model WalletTransaction {
   id            String                  @id @default(uuid())
-
   walletId      String
   userId        String
-
   type          WalletTransactionType
   reason        WalletTransactionReason
-
   amount        Int
-
   balanceBefore Int
   balanceAfter  Int
-
   referenceType WalletReferenceType?
   referenceId   String?
-
   metadata      Json?
-
-  createdAt     DateTime @default(now())
+  createdAt     DateTime                @default(now())
 
   wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -605,8 +573,8 @@ model UserBlock {
   reason    String?
   createdAt DateTime @default(now())
 
-  blocker   User     @relation("UserBlocksCreated", fields: [blockerId], references: [id], onDelete: Cascade)
-  blocked   User     @relation("UserBlocksReceived", fields: [blockedId], references: [id], onDelete: Cascade)
+  blocker User @relation("UserBlocksCreated", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked User @relation("UserBlocksReceived", fields: [blockedId], references: [id], onDelete: Cascade)
 
   @@unique([blockerId, blockedId])
   @@index([blockerId])
@@ -741,31 +709,19 @@ enum PaymentProvider {
 
 enum WalletTransactionReason {
   WELCOME_BONUS
-
   COIN_PURCHASE
-
   REQUEST_NEW_MATCHES
-
   START_STAGE_1
-
   UNLOCK_STAGE_2
   UNLOCK_STAGE_3
   UNLOCK_STAGE_4
   UNLOCK_STAGE_5
-
   SEND_VOICE_QUESTION
-
   SEND_VOICE_NOTE
-
   PROFILE_VIEW
-
   COMPLIMENT_PICTURE
-
   INVITE_GUEST
-
   REFUND
-
   PROMOTIONAL_BONUS
-
   ADMIN_ADJUSTMENT
 }
