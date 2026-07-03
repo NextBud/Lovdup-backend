@@ -97,15 +97,18 @@ const generateDiscoveryMatches = async (viewerId, trx) => {
   });
 
   // Debit coins
-  const price = getPrice("discovery.requestMatches");
   await walletService.debitCoins({
-    userId: viewerId,
-    amount: price.amount,
-    reason: price.action,
-    description: price.description,
-    metadata: { source: "discovery" },
-    trx,
-  });
+  userId: viewerId,
+  coins: price.amount,  
+  reason: price.action,
+  referenceType: WalletReferenceType.MATCH,  
+  referenceId: null,
+  metadata: { 
+    source: "discovery",
+    description: price.description  
+  },
+  db: trx, 
+});
 
   // Pull candidate pool
   const candidates = await discoveryDb.findDiscoveryCandidates({

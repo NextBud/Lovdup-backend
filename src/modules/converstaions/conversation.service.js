@@ -300,7 +300,7 @@ export const unlockStage = async (conversationId, userId, targetStage) => {
       // and create the appropriate ledger entry
       await walletService.debitCoins({
         userId,
-        amount: price.amount,
+        coins: price.amount,
         reason: meta.reason,
         referenceType: WalletReferenceType.CONVERSATION,
         referenceId: conversationId,
@@ -310,7 +310,7 @@ export const unlockStage = async (conversationId, userId, targetStage) => {
           stageLabel: meta.label,
           price: price.amount,
         },
-        db: trx, // Pass the transaction client
+        db: trx,
       });
 
       // 2. Create unlock record
