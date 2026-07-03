@@ -46,7 +46,7 @@ export const createPurchase = async ({
       provider,
       packageId,
       coinsPurchased: coinPackage.coins,
-      amountPaid: coinPackage.amount,
+      amountPaid: coinPackage.price,
       currency: coinPackage.currency,
       status: PurchaseStatus.PENDING,
       metadata,
