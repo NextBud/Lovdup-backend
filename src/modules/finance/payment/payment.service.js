@@ -2,6 +2,7 @@ import { BadRequestError } from "../../../classes/errorClasses.js";
 import * as purchaseService from "../purchases/purchase.service.js";
 import { paymentProviderFactory } from "../providers/paymentProviderFactory.js";
 import { CoinPurchaseStatus } from "../wallet/wallet.constants.js";
+import { PurchaseStatus } from "../purchases/purchase.constants.js";
 
 const handlers = {
   [CoinPurchaseStatus.COMPLETE]: purchaseService.completePurchase,
@@ -13,10 +14,9 @@ const handlers = {
 
 export const createCheckoutSession = async ({ purchaseId }) => {
   const purchase = await purchaseService.getPurchaseById(purchaseId);
-
-  if (purchase.status !== PurchaseStatus.PENDING) {
-    throw new BadRequestError("Purchase is no longer payable.");
-  }
+ if (purchase.status !== CoinPurchaseStatus.PENDING) {
+   throw new BadRequestError("Purchase is no longer payable.");
+ }
 
   const provider = paymentProviderFactory.resolve(purchase.provider);
 
