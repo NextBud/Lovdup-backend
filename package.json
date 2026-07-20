@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "prisma": {
-    "schema": "src/models/schema.prisma"
+    "schema": "src/models/schema.prisma",
+    "seed": "node seed/voicePrompts.js"
   },
   "scripts": {
     "start": "node main.js",

@@ -51,5 +51,15 @@ export const resetOnboarding = asyncWrapper(async (req, res) => {
   });
 });
 
-// NOTE: the `me` controller that called authService.getMe() has been removed.
-// That functionality lives in auth.controller.js → GET /auth/me.
+// GET /onboarding/voice-prompts
+// Public reference data — frontend calls this before recording so it has
+// real VoicePrompt ids to send back on POST /onboarding/media/voices.
+export const getVoicePrompts = asyncWrapper(async (req, res) => {
+  const prompts = await onboardingService.getVoicePrompts();
+
+  return res.status(200).json({
+    success: true,
+    data: prompts,
+  });
+});
+

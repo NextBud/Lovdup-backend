@@ -38,19 +38,31 @@ model User {
   updatedAt              DateTime              @updatedAt
   photosProcessingStatus MediaProcessingStatus @default(UPLOADING)
   voiceProcessingStatus  MediaProcessingStatus @default(UPLOADING)
+  campaignsCreated       Campaign[]            @relation("CampaignCreator")
+  isInfluencer           Boolean               @default(false)
+  influencerProfile      InfluencerProfile?
+
+  // Referral Relations
+  referralCode      ReferralCode?
+  referralsMade     Referral[]         @relation("Referrer")
+  referralReceived  Referral?          @relation("ReferredUser")
+  influencerProfile InfluencerProfile?
+
+  // Reward Relations
+  referralRewards ReferralReward[]
 
   // Relations
   conversationUnlocks   ConversationUnlock[]
   authProviders         AuthProvider[]
-  compatibilityAsUserA  CompatibilityScore[]  @relation("CompatibilityUserA")
-  compatibilityAsUserB  CompatibilityScore[]  @relation("CompatibilityUserB")
-  matchesAsUserA        Match[]               @relation("MatchUserA")
-  matchesAsUserB        Match[]               @relation("MatchUserB")
+  compatibilityAsUserA  CompatibilityScore[] @relation("CompatibilityUserA")
+  compatibilityAsUserB  CompatibilityScore[] @relation("CompatibilityUserB")
+  matchesAsUserA        Match[]              @relation("MatchUserA")
+  matchesAsUserB        Match[]              @relation("MatchUserB")
   matchPreference       MatchPreference?
-  receivedMatchRequests MatchRequest[]        @relation("ReceivedMatchRequests")
-  sentMatchRequests     MatchRequest[]        @relation("SentMatchRequests")
-  candidateMatchResults MatchResult[]         @relation("CandidateMatchResults")
-  viewedMatchResults    MatchResult[]         @relation("ViewerMatchResults")
+  receivedMatchRequests MatchRequest[]       @relation("ReceivedMatchRequests")
+  sentMatchRequests     MatchRequest[]       @relation("SentMatchRequests")
+  candidateMatchResults MatchResult[]        @relation("CandidateMatchResults")
+  viewedMatchResults    MatchResult[]        @relation("ViewerMatchResults")
   onboardingMedia       OnboardingMedia[]
   onboardingProgress    OnboardingProgress?
   profile               Profile?
@@ -58,16 +70,306 @@ model User {
   refreshSessions       RefreshSession[]
   voiceAnswers          VoiceAnswer[]
   wallet                Wallet?
-  coinPurchases         CoinPurchase[] // <-- Added this line to fix P1012 Error
+  coinPurchases         CoinPurchase[]
   walletTransactions    WalletTransaction[]
   messages              Message[]
-  blocksCreated         UserBlock[]           @relation("UserBlocksCreated")
-  blocksReceived        UserBlock[]           @relation("UserBlocksReceived")
+  blocksCreated         UserBlock[]          @relation("UserBlocksCreated")
+  blocksReceived        UserBlock[]          @relation("UserBlocksReceived")
+  payouts               Payout[]
 
   // Direct Conversation relationship tracking
   conversationsAsUserA Conversation[] @relation("ConversationUserA")
   conversationsAsUserB Conversation[] @relation("ConversationUserB")
 }
+
+// ---------------------------------------------------------------------------
+// Campaign Models
+// ---------------------------------------------------------------------------
+
+model Campaign {
+  id          String         @id @default(uuid())
+  name        String
+  description String?
+  type        CampaignType
+  status      CampaignStatus
+  startsAt    DateTime?
+  endsAt      DateTime?
+  createdById String
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  createdBy       User                  @relation("CampaignCreator", fields: [createdById], references: [id])
+  campaignRewards CampaignReward[]
+  participants    CampaignParticipant[]
+  referrals       Referral[]
+
+  @@index([status])
+  @@index([type])
+  @@index([createdById])
+}
+
+model CampaignReward {
+  id              String                  @id @default(uuid())
+  campaignId      String
+  rewardType      RewardType
+  participantType CampaignParticipantType
+  amount          Decimal                 @db.Decimal(10, 2)
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, participantType])
+  @@index([campaignId])
+  @@index([participantType])
+}
+
+model CampaignParticipant {
+  id                  String                    @id @default(uuid())
+  campaignId          String
+  influencerProfileId String
+  commissionOverride  Decimal?                  @db.Decimal(10, 2)
+  status              CampaignParticipantStatus
+  joinedAt            DateTime                  @default(now())
+
+  campaign          Campaign          @relation(fields: [campaignId], references: [id])
+  influencerProfile InfluencerProfile @relation(fields: [influencerProfileId], references: [id])
+  referrals         Referral[]
+
+  @@unique([campaignId, influencerProfileId])
+  @@index([campaignId])
+  @@index([influencerProfileId])
+  @@index([status])
+}
+
+// ---------------------------------------------------------------------------
+// Referral Models
+// ---------------------------------------------------------------------------
+
+model ReferralCode {
+  id            String    @id @default(uuid())
+  userId        String    @unique
+  code          String    @unique
+  isActive      Boolean   @default(true)
+  expiresAt     DateTime?
+  regeneratedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  referrals Referral[]
+  clicks    ReferralClick[]
+
+  @@index([code])
+  @@index([isActive])
+  @@index([userId])
+}
+
+model Referral {
+  id                    String         @id @default(uuid())
+  campaignId            String?
+  campaignParticipantId String?
+  referralCodeId        String
+  referrerId            String
+  referredUserId        String         @unique
+  rewardType            RewardType     @default(COINS)
+  rewardAmount          Decimal        @default(100) @db.Decimal(10, 2)
+  status                ReferralStatus @default(PENDING)
+  clickedAt             DateTime?
+  registeredAt          DateTime?      @default(now())
+  qualifiedAt           DateTime?
+  rewardedAt            DateTime?
+  rejectedAt            DateTime?
+  rejectionReason       String?
+  metadata              Json?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  campaign            Campaign?            @relation(fields: [campaignId], references: [id])
+  campaignParticipant CampaignParticipant? @relation(fields: [campaignParticipantId], references: [id])
+  referralCode        ReferralCode         @relation(fields: [referralCodeId], references: [id])
+  referrer            User                 @relation("Referrer", fields: [referrerId], references: [id])
+  referredUser        User                 @relation("ReferredUser", fields: [referredUserId], references: [id])
+  reward              ReferralReward?
+  clicks              ReferralClick[]
+
+  @@index([referrerId])
+  @@index([referredUserId])
+  @@index([status])
+  @@index([campaignId])
+  @@index([campaignParticipantId])
+  @@index([referralCodeId])
+  @@index([createdAt])
+}
+
+model ReferralReward {
+  id            String          @id @default(uuid())
+  referralId    String          @unique
+  beneficiaryId String
+  status        RewardStatus    @default(PENDING)
+  processor     RewardProcessor @default(SYSTEM)
+  processedAt   DateTime?
+  payoutId      String?
+  metadata      Json?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  referral    Referral @relation(fields: [referralId], references: [id])
+  beneficiary User     @relation(fields: [beneficiaryId], references: [id])
+  payout      Payout?  @relation(fields: [payoutId], references: [id])
+
+  @@index([beneficiaryId])
+  @@index([status])
+  @@index([payoutId])
+  @@index([processor])
+}
+
+model InfluencerReferral {
+  id               String              @id @default(uuid())
+  influencerId     String              // FK to InfluencerProfile
+  referredUserId   String              @unique // FK to User
+  referralCode     String              // The code used
+  status           ReferralStatus      @default(PENDING)
+  clickedAt        DateTime?
+  registeredAt     DateTime            @default(now())
+  onboardedAt      DateTime?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  influencer   InfluencerProfile @relation(fields: [influencerId], references: [id])
+  referredUser User              @relation(fields: [referredUserId], references: [id])
+
+  @@index([influencerId])
+  @@index([referredUserId])
+  @@index([status])
+}
+
+
+model ReferralClick {
+  id                String         @id @default(uuid())
+  referralCodeId    String
+  referralId        String?
+  ipAddress         String?
+  userAgent         String?
+  deviceFingerprint String?
+  country           String?
+  source            ReferralSource @default(DIRECT_LINK)
+  failureReason     String?
+  converted         Boolean        @default(false)
+  clickedAt         DateTime       @default(now())
+
+  referralCode ReferralCode @relation(fields: [referralCodeId], references: [id], onDelete: Cascade)
+  referral     Referral?    @relation(fields: [referralId], references: [id])
+
+  @@index([referralCodeId])
+  @@index([referralId])
+  @@index([source])
+  @@index([converted])
+  @@index([clickedAt])
+}
+
+// ---------------------------------------------------------------------------
+// Influencer Models
+// ---------------------------------------------------------------------------
+
+model InfluencerProfile {
+  id               String            @id @default(uuid())
+  userId           String            @unique
+  brandName        String?
+  paymentMethod    PaymentMethod?
+  paymentReference String?
+  status           InfluencerStatus  @default(ACTIVE)
+  notes            String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  user             User              @relation(fields: [userId], references: [id])
+  socials          InfluencerSocial[]
+  payouts          Payout[]
+  campaignParticipants CampaignParticipant[]
+  earnings InfluencerEarning[]
+
+  @@index([userId])
+  @@index([status])
+}
+
+model InfluencerEarning {
+  id               String           @id @default(uuid())
+  influencerId     String           // FK to InfluencerProfile
+  referredUserId   String           // FK to User who bought coins
+  purchaseId       String           // FK to CoinPurchase
+  purchaseAmount   Decimal          @db.Decimal(10, 2) // Total purchase amount
+  commissionAmount Decimal          @db.Decimal(10, 2) // 20% of purchase
+  status           EarningStatus    @default(PENDING)
+  paidOut          Boolean          @default(false)
+  payoutId         String?          // FK to Payout
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  influencer   InfluencerProfile @relation(fields: [influencerId], references: [id])
+  referredUser User              @relation(fields: [referredUserId], references: [id])
+  purchase     CoinPurchase      @relation(fields: [purchaseId], references: [id])
+  payout       Payout?           @relation(fields: [payoutId], references: [id])
+
+  @@index([influencerId])
+  @@index([referredUserId])
+  @@index([purchaseId])
+  @@index([status])
+  @@index([paidOut])
+}
+
+
+model InfluencerSocial {
+  id           String         @id @default(uuid())
+  influencerId String
+  platform     SocialPlatform
+  handle       String
+  url          String?
+  followers    Int?
+  verified     Boolean        @default(false)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  influencer InfluencerProfile @relation(fields: [influencerId], references: [id])
+
+  @@unique([influencerId, platform])
+  @@index([influencerId])
+  @@index([platform])
+  @@index([handle])
+}
+
+// ---------------------------------------------------------------------------
+// Payout Models
+// ---------------------------------------------------------------------------
+
+model Payout {
+  id                  String           @id @default(uuid())
+  influencerProfileId String
+  amount              Decimal          @db.Decimal(10, 2)
+  status              PayoutStatus     @default(PENDING)
+  provider            PaymentProvider?
+  providerReference   String?
+  paidAt              DateTime?
+  batchId             String?
+  metadata            Json?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  influencerProfile InfluencerProfile @relation(fields: [influencerProfileId], references: [id])
+  rewards           ReferralReward[]
+  user              User?             @relation(fields: [userId], references: [id])
+  userId            String?
+
+  @@index([influencerProfileId])
+  @@index([status])
+  @@index([provider])
+  @@index([createdAt])
+  @@index([batchId])
+}
+
+// ---------------------------------------------------------------------------
+// Conversation & Messaging Models
+// ---------------------------------------------------------------------------
 
 model ConversationUnlock {
   id             String   @id @default(uuid())
@@ -171,7 +473,7 @@ model Profile {
   photosProcessingStatus MediaProcessingStatus @default(UPLOADING)
   voiceProcessingStatus  MediaProcessingStatus @default(UPLOADING)
 
-  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   identity      ProfileIdentity?
   lifestyle     ProfileLifestyle?
   narrative     ProfileNarrative?
@@ -266,17 +568,21 @@ model ProfilePhoto {
 }
 
 // ---------------------------------------------------------------------------
-// Voice Interaction Models
+// Voice Interaction Models - FIXED: Added order field and indexes
 // ---------------------------------------------------------------------------
 
 model VoicePrompt {
   id        String        @id @default(uuid())
   question  String
   category  String?
+  order     Int           @default(0) // 👈 ADDED for consistent ordering
   isActive  Boolean       @default(true)
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
   answers   VoiceAnswer[]
+
+  @@index([order]) // 👈 ADDED for sorting queries
+  @@index([isActive]) // 👈 ADDED for filtering active prompts
 }
 
 model VoiceAnswer {
@@ -377,9 +683,8 @@ model MatchRequest {
   voiceNoteUrl String?
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
-
-  receiver User @relation("ReceivedMatchRequests", fields: [receiverId], references: [id], onDelete: Cascade)
-  sender   User @relation("SentMatchRequests", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver     User               @relation("ReceivedMatchRequests", fields: [receiverId], references: [id], onDelete: Cascade)
+  sender       User               @relation("SentMatchRequests", fields: [senderId], references: [id], onDelete: Cascade)
 
   @@unique([senderId, receiverId])
   @@index([senderId, receiverId])
@@ -390,14 +695,14 @@ model MatchRequest {
 }
 
 model Match {
-  id              String        @id @default(uuid())
+  id              String      @id @default(uuid())
   userAId         String
   userBId         String
-  status          MatchStatus   @default(ACTIVE)
-  matchedAt       DateTime      @default(now())
+  status          MatchStatus @default(ACTIVE)
+  matchedAt       DateTime    @default(now())
   unmatchedAt     DateTime?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
   unmatchedBy     String?
   unmatchedReason String?
 
@@ -412,7 +717,7 @@ model Match {
 }
 
 model MatchResult {
-  id                   String @id @default(uuid())
+  id                   String  @id @default(uuid())
   viewerId             String
   candidateId          String
   compatibilityScoreId String?
@@ -442,23 +747,25 @@ model MatchResult {
 // ---------------------------------------------------------------------------
 
 model Conversation {
-  id       String @id @default(uuid())
-  matchId  String @unique
-  userAId  String?
-  userBId  String?
-  stage    Int    @default(1)
-  
+  id      String  @id @default(uuid())
+  matchId String  @unique
+  userAId String?
+  userBId String?
+  stage   Int     @default(1)
+
   userAStage2 Boolean @default(false)
   userBStage2 Boolean @default(false)
   userAStage3 Boolean @default(false)
   userBStage3 Boolean @default(false)
   userAStage4 Boolean @default(false)
   userBStage4 Boolean @default(false)
+  userAStage5 Boolean @default(false)
+  userBStage5 Boolean @default(false)
 
-  stageStartedAt    DateTime @default(now())
-  lastActivityAt    DateTime @default(now())
+  stageStartedAt    DateTime           @default(now())
+  lastActivityAt    DateTime           @default(now())
   status            ConversationStatus @default(ACTIVE)
-  contactRevealed   Boolean  @default(false)
+  contactRevealed   Boolean            @default(false)
   contactRevealedAt DateTime?
 
   lastMessageAt DateTime?
@@ -484,10 +791,10 @@ model Conversation {
 }
 
 model Message {
-  id             String   @id @default(uuid())
+  id             String      @id @default(uuid())
   conversationId String
   senderId       String?
-  sender         User?    @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  sender         User?       @relation(fields: [senderId], references: [id], onDelete: Cascade)
   type           MessageType
   body           String?
   voiceUrl       String?
@@ -495,7 +802,7 @@ model Message {
   photoUrl       String?
   contactValue   String?
   readAt         DateTime?
-  createdAt      DateTime @default(now())
+  createdAt      DateTime    @default(now())
 
   conversation   Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   lastMessageFor Conversation? @relation("ConversationLastMessage")
@@ -584,6 +891,95 @@ model UserBlock {
 // ---------------------------------------------------------------------------
 // Enums
 // ---------------------------------------------------------------------------
+
+enum CampaignType {
+  USER
+  INFLUENCER
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ENDED
+}
+
+enum CampaignParticipantType {
+  USER
+  INFLUENCER
+  VIP_INFLUENCER
+}
+
+enum CampaignParticipantStatus {
+  ACTIVE
+  PAUSED
+  REMOVED
+}
+
+enum ReferralStatus {
+  PENDING
+  QUALIFIED
+  REWARDED
+  REJECTED
+}
+
+enum RewardType {
+  COINS
+  CASH
+}
+
+enum RewardStatus {
+  PENDING
+  ISSUED
+  FAILED
+  PAID
+}
+
+enum RewardProcessor {
+  SYSTEM
+  ADMIN
+  RETRY_JOB
+}
+
+enum ReferralSource {
+  DIRECT_LINK
+  INSTAGRAM
+  TIKTOK
+  WHATSAPP
+  FACEBOOK
+  QR_CODE
+  DEEPLINK
+  UNKNOWN
+}
+
+enum InfluencerStatus {
+  ACTIVE
+  PAUSED
+  REMOVED
+}
+
+enum PayoutStatus {
+  PENDING
+  PROCESSING
+  PAID
+  FAILED
+}
+
+enum PaymentMethod {
+  BANK_TRANSFER
+  PAYPAL
+  STRIPE
+  CRYPTO
+}
+
+enum SocialPlatform {
+  INSTAGRAM
+  TIKTOK
+  YOUTUBE
+  X
+  FACEBOOK
+  SNAPCHAT
+}
 
 enum UserRole {
   USER
@@ -692,6 +1088,7 @@ enum WalletReferenceType {
   PROFILE
   ADMIN
   SYSTEM
+  REFERRAL
 }
 
 enum CoinPurchaseStatus {
@@ -724,4 +1121,12 @@ enum WalletTransactionReason {
   REFUND
   PROMOTIONAL_BONUS
   ADMIN_ADJUSTMENT
+  REFERRAL_BONUS
+}
+
+enum EarningStatus {
+  PENDING
+  PROCESSING
+  PAID
+  FAILED
 }

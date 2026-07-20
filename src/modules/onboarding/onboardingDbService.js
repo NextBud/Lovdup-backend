@@ -112,3 +112,20 @@ export const deleteOnboardingMediaByUserId = async (userId, tx = null) => {
     where: { userId },
   });
 };
+
+// ─────────────────────────────────────────────
+// VOICE PROMPTS (read-only reference data)
+// ─────────────────────────────────────────────
+
+export const findAllVoicePrompts = async (tx = null) => {
+  return db(tx).voicePrompt.findMany({
+    where: { isActive: true },
+    orderBy: { order: "asc" },
+    select: {
+      id: true,
+      question: true,
+      category: true,
+      order: true,
+    },
+  });
+};

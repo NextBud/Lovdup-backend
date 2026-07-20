@@ -10,6 +10,7 @@ import {
   savePhotos,
   saveVoiceAnswers,
 } from "./profileController.js";
+import profileMediaRouter from "./profileMediaRouter.js";
 import {
   upsertProfileIdentitySchema,
   upsertProfileLifestyleSchema,
@@ -21,6 +22,10 @@ import {
 
 const profileRouter = express.Router();
 
+// Mount media routes
+profileRouter.use(profileMediaRouter);
+
+// Existing routes
 profileRouter.use(authMiddleware);
 
 profileRouter.get("/me", getMyProfile);
@@ -45,11 +50,7 @@ profileRouter.put(
   validateBody(upsertProfileNarrativeSchema),
   upsertNarrative,
 );
-profileRouter.put(
-  "/photos",
-  validateBody(saveProfilePhotosSchema),
-  savePhotos,
-);
+profileRouter.put("/photos", validateBody(saveProfilePhotosSchema), savePhotos);
 profileRouter.put(
   "/voice",
   validateBody(saveVoiceAnswersSchema),

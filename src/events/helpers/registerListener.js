@@ -1,14 +1,11 @@
 import { eventBus } from "../eventBus.js";
 
 export const safeListener = (eventName, handler) => {
-  eventBus.on(eventName, (payload) => {
+  eventBus.on(eventName, async (payload) => {
     try {
-      handler(payload);
+      await handler(payload);
     } catch (error) {
-      console.error(
-        `[ConversationListener] ${eventName}`,
-        error,
-      );
+      console.error(`[${eventName}]`, error);
     }
   });
 };

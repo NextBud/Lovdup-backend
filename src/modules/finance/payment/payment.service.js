@@ -18,7 +18,7 @@ export const createCheckoutSession = async ({ purchaseId }) => {
    throw new BadRequestError("Purchase is no longer payable.");
  }
 
-  const provider = paymentProviderFactory.resolve(purchase.provider);
+  const provider = paymentProviderFactory.providers(purchase.provider);
 
   return provider.createCheckoutSession({
     purchase,

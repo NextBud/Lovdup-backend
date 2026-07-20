@@ -7,29 +7,52 @@ export const EVENT_TYPES = {
   MATCH_CREATED: "MATCH_CREATED",
 
   // ---------------------------------------------------------------------------
-  // Conversation — messaging
+  // Referrals
+  // ---------------------------------------------------------------------------
+
+  REFERRAL_CLICKED: "REFERRAL_CLICKED",
+
+  REFERRAL_CREATED: "REFERRAL_CREATED",
+
+  REFERRAL_QUALIFIED: "REFERRAL_QUALIFIED",
+
+  REFERRAL_REJECTED: "REFERRAL_REJECTED",
+
+  REFERRAL_REWARDED: "REFERRAL_REWARDED",
+
+  // ---------------------------------------------------------------------------
+  // Influencer
+  // ---------------------------------------------------------------------------
+
+  INFLUENCER_CREATED: "INFLUENCER_CREATED",
+
+  PAYOUT_CREATED: "PAYOUT_CREATED",
+
+  PAYOUT_COMPLETED: "PAYOUT_COMPLETED",
+
+  // ---------------------------------------------------------------------------
+  // Wallet
+  // ---------------------------------------------------------------------------
+
+  COINS_AWARDED: "COINS_AWARDED",
+
+
+  // ---------------------------------------------------------------------------
+  // Onboarding
+  // ---------------------------------------------------------------------------
+
+  USER_ONBOARDING_COMPLETED: "USER_ONBOARDING_COMPLETED",
+
+  // ---------------------------------------------------------------------------
+  // Messaging
   // ---------------------------------------------------------------------------
 
   MESSAGE_SENT: "MESSAGE_SENT",
 
-  // ---------------------------------------------------------------------------
-  // Conversation — stage unlocks
-  //
-  // STAGE_UNLOCK_PAID  : one user has paid for a stage unlock (partner may not
-  //                      have paid yet). Used to show "waiting on partner" UI.
-  // STAGE_UNLOCKED     : both users have paid — the stage has actually advanced.
-  // ---------------------------------------------------------------------------
-
   STAGE_UNLOCK_PAID: "STAGE_UNLOCK_PAID",
+
   STAGE_UNLOCKED: "STAGE_UNLOCKED",
 
-  // ---------------------------------------------------------------------------
-  // Conversation — read receipts & lifecycle
-  // ---------------------------------------------------------------------------
-
-  // FIX: key was MESSAGE_READ but value was "CONVERSATION_READ" — the service
-  // emits using the key name, so EVENT_TYPES.CONVERSATION_READ was undefined
-  // and read receipts were never broadcast. Key and value now match.
   CONVERSATION_READ: "CONVERSATION_READ",
 
   CONVERSATION_BLOCKED: "CONVERSATION_BLOCKED",

@@ -5,6 +5,7 @@ import {
   saveDraft,
   completeOnboarding,
   resetOnboarding,
+  getVoicePrompts,
 } from "./onboardingController.js";
 import {
   uploadOnboardingPhotos,
@@ -24,6 +25,9 @@ onboardingRouter.get("/", getMyOnboarding);
 onboardingRouter.post("/draft", saveDraft);
 onboardingRouter.post("/complete", completeOnboarding);
 onboardingRouter.post("/reset", resetOnboarding);
+
+// Reference data
+onboardingRouter.get("/voice-prompts", getVoicePrompts);
 
 // Media — multer middleware runs before the controller
 onboardingRouter.post(

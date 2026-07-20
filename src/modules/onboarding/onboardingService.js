@@ -4,12 +4,15 @@ import { extractProfilePayloads } from "./onboarding.helpers.js";
 import { getStepIndex } from "./onboarding.steps.js";
 import { ONBOARDING_STATUS } from "./onboarding.constants.js";
 import { validateStepCompletion } from "./onboarding.guards.js";
+import { createReferralCode } from "../referral/referral.service.js";
 import {
   NotFoundException,
   BadRequestError,
   ConflictException,
 } from "../../classes/errorClasses.js";
 import { completeOnboardingSchema } from "./onboardingValidator.js";
+import * as referralService from "../referral/referral.service.js";
+import { emitUserOnboardingCompleted } from "../../events/helpers/user.events.js";
 
 // ─────────────────────────────────────────────
 // GET
@@ -24,8 +27,6 @@ export const getMyOnboarding = async (userId) => {
       currentStep: 1,
       currentStepId: "name",
       completedSections: [],
-      // draftData shape matches what onboardingHydrationService.hydrate() reads:
-      // draft.profile, draft.completedSteps, draft.currentStepId
       draftData: {
         profile: {},
         completedSteps: [],
@@ -43,26 +44,25 @@ export const getMyOnboarding = async (userId) => {
 // ─────────────────────────────────────────────
 
 export const saveProgress = async ({ userId, stepId, data }) => {
+  let progress = await prisma.onboardingProgress.findUnique({
+    where: { userId },
+  });
 
- let progress = await prisma.onboardingProgress.findUnique({
-   where: { userId },
- });
-
- if (!progress) {
-   progress = await prisma.onboardingProgress.create({
-     data: {
-       userId,
-       status: ONBOARDING_STATUS.IN_PROGRESS,
-       currentStep: 1,
-       completedSections: [],
-       draftData: {
-         profile: {},
-         completedSteps: [],
-         currentStepId: "name",
-       },
-     },
-   });
- }
+  if (!progress) {
+    progress = await prisma.onboardingProgress.create({
+      data: {
+        userId,
+        status: ONBOARDING_STATUS.IN_PROGRESS,
+        currentStep: 1,
+        completedSections: [],
+        draftData: {
+          profile: {},
+          completedSteps: [],
+          currentStepId: "name",
+        },
+      },
+    });
+  }
 
   const updatedDraft = {
     ...progress.draftData,
@@ -116,7 +116,9 @@ export const completeOnboarding = async (userId, payload) => {
   const progress = await onboardingDb.findProgressByUserId(userId);
 
   if (!progress) {
-    throw new NotFoundException("No onboarding session found. Start from step 1.");
+    throw new NotFoundException(
+      "No onboarding session found. Start from step 1.",
+    );
   }
 
   if (progress.status === ONBOARDING_STATUS.COMPLETED) {
@@ -201,13 +203,73 @@ export const completeOnboarding = async (userId, payload) => {
     // Mark complete
     await onboardingDb.markCompleted(userId, tx);
 
+    // ─────────────────────────────────────────────
+    // CREATE REFERRAL CODE FOR THE USER
+    // ─────────────────────────────────────────────
+    let referralCode;
+    try {
+      // Check if user already has a referral code (shouldn't happen, but just in case)
+      const existingCode = await tx.referralCode.findUnique({
+        where: { userId },
+      });
+
+      if (!existingCode) {
+        // Create referral code for the newly onboarded user
+        referralCode = await createReferralCode(userId, tx);
+      } else {
+        referralCode = existingCode;
+      }
+    } catch (error) {
+      // Log error but don't fail onboarding if referral creation fails
+      console.error(
+        `Failed to create referral code for user ${userId}:`,
+        error,
+      );
+      // We'll still emit the event, but the listener might need to handle missing code
+    }
+
+    // ─────────────────────────────────────────────
+    // EMIT USER ONBOARDING COMPLETED EVENT
+    // ─────────────────────────────────────────────
+    // This will trigger the referral qualification listener
+    // which will check if the user was referred by someone
+    emitUserOnboardingCompleted({
+      userId,
+      profileId: profile.id,
+      referralCode: referralCode?.code,
+      timestamp: new Date(),
+    });
+
     return {
       profileId: profile.id,
+      referralCode: referralCode?.code,
       message: "Welcome to LovdUp.",
     };
   });
 };
 
+// ─────────────────────────────────────────────
+// VOICE PROMPTS
+// Read-only reference list the frontend fetches before recording so it
+// has real VoicePrompt ids to attach to each upload (see
+// onboardingMediaController.uploadOnboardingVoices, which validates
+// promptIds against this same table).
+// ─────────────────────────────────────────────
+
+// getVoicePrompts
+export const getVoicePrompts = async () => {
+  const prompts = await onboardingDb.findAllVoicePrompts();
+  if (!prompts.length) {
+    throw new NotFoundException("No voice prompts are currently configured.");
+  }
+  
+  return prompts.map(p => ({
+    id: p.id,
+    question: p.question,
+    category: p.category,
+    order: p.order,
+  }));
+};
 // ─────────────────────────────────────────────
 // RESET
 // ─────────────────────────────────────────────
