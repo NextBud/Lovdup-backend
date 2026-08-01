@@ -12,6 +12,8 @@ import {
   getMyMedia,
 } from "./profileMediaController.js";
 
+
+
 const profileMediaRouter = express.Router();
 
 // All routes require authentication

@@ -40,16 +40,19 @@ model User {
   voiceProcessingStatus  MediaProcessingStatus @default(UPLOADING)
   campaignsCreated       Campaign[]            @relation("CampaignCreator")
   isInfluencer           Boolean               @default(false)
-  influencerProfile      InfluencerProfile?
 
   // Referral Relations
   referralCode      ReferralCode?
   referralsMade     Referral[]         @relation("Referrer")
   referralReceived  Referral?          @relation("ReferredUser")
-  influencerProfile InfluencerProfile?
+  influencerProfile InfluencerProfile? // REMOVED DUPLICATE - KEEP ONLY THIS ONE
 
   // Reward Relations
   referralRewards ReferralReward[]
+
+  // Influencer Program Relations
+  influencerReferrals InfluencerReferral[]
+  influencerEarnings  InfluencerEarning[]
 
   // Relations
   conversationUnlocks   ConversationUnlock[]
@@ -225,16 +228,16 @@ model ReferralReward {
 }
 
 model InfluencerReferral {
-  id               String              @id @default(uuid())
-  influencerId     String              // FK to InfluencerProfile
-  referredUserId   String              @unique // FK to User
-  referralCode     String              // The code used
-  status           ReferralStatus      @default(PENDING)
-  clickedAt        DateTime?
-  registeredAt     DateTime            @default(now())
-  onboardedAt      DateTime?
-  createdAt        DateTime            @default(now())
-  updatedAt        DateTime            @updatedAt
+  id             String         @id @default(uuid())
+  influencerId   String // FK to InfluencerProfile
+  referredUserId String         @unique // FK to User
+  referralCode   String // The code used
+  status         ReferralStatus @default(PENDING)
+  clickedAt      DateTime?
+  registeredAt   DateTime       @default(now())
+  onboardedAt    DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
   influencer   InfluencerProfile @relation(fields: [influencerId], references: [id])
   referredUser User              @relation(fields: [referredUserId], references: [id])
@@ -243,7 +246,6 @@ model InfluencerReferral {
   @@index([referredUserId])
   @@index([status])
 }
-
 
 model ReferralClick {
   id                String         @id @default(uuid())
@@ -273,38 +275,39 @@ model ReferralClick {
 // ---------------------------------------------------------------------------
 
 model InfluencerProfile {
-  id               String            @id @default(uuid())
-  userId           String            @unique
-  brandName        String?
-  paymentMethod    PaymentMethod?
-  paymentReference String?
-  status           InfluencerStatus  @default(ACTIVE)
-  notes            String?
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  id                String           @id @default(uuid())
+  userId            String           @unique
+  brandName         String?
+  paymentMethod     PaymentMethod?
+  paymentReference  String?
+  status            InfluencerStatus @default(ACTIVE)
+  notes             String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
 
-  user             User              @relation(fields: [userId], references: [id])
-  socials          InfluencerSocial[]
-  payouts          Payout[]
+  user                 User                  @relation(fields: [userId], references: [id])
+  socials              InfluencerSocial[]
+  payouts              Payout[]
   campaignParticipants CampaignParticipant[]
-  earnings InfluencerEarning[]
+  earnings             InfluencerEarning[]
+  influencerReferrals  InfluencerReferral[]
 
   @@index([userId])
   @@index([status])
 }
 
 model InfluencerEarning {
-  id               String           @id @default(uuid())
-  influencerId     String           // FK to InfluencerProfile
-  referredUserId   String           // FK to User who bought coins
-  purchaseId       String           // FK to CoinPurchase
-  purchaseAmount   Decimal          @db.Decimal(10, 2) // Total purchase amount
-  commissionAmount Decimal          @db.Decimal(10, 2) // 20% of purchase
-  status           EarningStatus    @default(PENDING)
-  paidOut          Boolean          @default(false)
-  payoutId         String?          // FK to Payout
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
+  id               String        @id @default(uuid())
+  influencerId     String // FK to InfluencerProfile
+  referredUserId   String // FK to User who bought coins
+  purchaseId       String // FK to CoinPurchase
+  purchaseAmount   Decimal       @db.Decimal(10, 2) // Total purchase amount
+  commissionAmount Decimal       @db.Decimal(10, 2) // 20% of purchase
+  status           EarningStatus @default(PENDING)
+  paidOut          Boolean       @default(false)
+  payoutId         String? // FK to Payout
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
 
   influencer   InfluencerProfile @relation(fields: [influencerId], references: [id])
   referredUser User              @relation(fields: [referredUserId], references: [id])
@@ -317,7 +320,6 @@ model InfluencerEarning {
   @@index([status])
   @@index([paidOut])
 }
-
 
 model InfluencerSocial {
   id           String         @id @default(uuid())
@@ -355,10 +357,11 @@ model Payout {
   createdAt           DateTime         @default(now())
   updatedAt           DateTime         @updatedAt
 
-  influencerProfile InfluencerProfile @relation(fields: [influencerProfileId], references: [id])
-  rewards           ReferralReward[]
-  user              User?             @relation(fields: [userId], references: [id])
-  userId            String?
+  influencerProfile  InfluencerProfile  @relation(fields: [influencerProfileId], references: [id])
+  rewards            ReferralReward[]
+  influencerEarnings InfluencerEarning[]
+  user               User?              @relation(fields: [userId], references: [id])
+  userId             String?
 
   @@index([influencerProfileId])
   @@index([status])
@@ -568,21 +571,21 @@ model ProfilePhoto {
 }
 
 // ---------------------------------------------------------------------------
-// Voice Interaction Models - FIXED: Added order field and indexes
+// Voice Interaction Models
 // ---------------------------------------------------------------------------
 
 model VoicePrompt {
   id        String        @id @default(uuid())
   question  String
   category  String?
-  order     Int           @default(0) // 👈 ADDED for consistent ordering
+  order     Int           @default(0)
   isActive  Boolean       @default(true)
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
   answers   VoiceAnswer[]
 
-  @@index([order]) // 👈 ADDED for sorting queries
-  @@index([isActive]) // 👈 ADDED for filtering active prompts
+  @@index([order])
+  @@index([isActive])
 }
 
 model VoiceAnswer {
@@ -626,21 +629,23 @@ model Package {
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-  
-  purchases   CoinPurchase[]
+
+  purchases CoinPurchase[]
 
   @@index([isActive])
   @@index([coins])
 }
 
-// Update CoinPurchase to include relation
+// ---------------------------------------------------------------------------
+// Coin Purchase Model - SINGLE DEFINITION
+// ---------------------------------------------------------------------------
+
 model CoinPurchase {
   id                String             @id @default(uuid())
   userId            String
   provider          PaymentProvider
   providerReference String?            @unique
   packageId         String
-  package           Package?           @relation(fields: [packageId], references: [id])
   amountPaid        Decimal            @db.Decimal(10, 2)
   currency          String
   coinsPurchased    Int
@@ -650,7 +655,9 @@ model CoinPurchase {
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user     User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  package  Package?             @relation(fields: [packageId], references: [id])
+  earnings InfluencerEarning[]
 
   @@index([userId])
   @@index([provider])
@@ -663,30 +670,30 @@ model CoinPurchase {
 // ---------------------------------------------------------------------------
 
 model MatchPreference {
-  id                           String   @id @default(uuid())
-  userId                       String   @unique
-  preferredGenders             Gender[]
-  ageMin                       Int      @default(18)
-  ageMax                       Int      @default(99)
-  locationPreference           String
-  religionPreference           String
-  culturePreference            String
-  childrenPreference           String
-  faithPractice                String
-  energyDescription            String
-  communicationStyle           String
-  tuesdayFeeling               String
-  energyMatchStyle             String
-  ambitionImportance           String
-  socialLevel                  String
-  lifestylePreference          String
-  financialStabilityPreference String
-  financialStagePreference     String
-  idealPartnerType             String
-  matchVoicePrompt             String
-  minCompatibilityScore        Int      @default(50)
-  createdAt                    DateTime @default(now())
-  updatedAt                    DateTime @updatedAt
+  id                            String   @id @default(uuid())
+  userId                        String   @unique
+  preferredGenders              Gender[]
+  ageMin                        Int      @default(18)
+  ageMax                        Int      @default(99)
+  locationPreference            String
+  religionPreference            String
+  culturePreference             String
+  childrenPreference            String
+  faithPractice                 String
+  energyDescription             String
+  communicationStyle            String
+  tuesdayFeeling                String
+  energyMatchStyle              String
+  ambitionImportance            String
+  socialLevel                   String
+  lifestylePreference           String
+  financialStabilityPreference  String
+  financialStagePreference      String
+  idealPartnerType              String
+  matchVoicePrompt              String
+  minCompatibilityScore         Int      @default(50)
+  createdAt                     DateTime @default(now())
+  updatedAt                     DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -867,28 +874,6 @@ model Wallet {
 
   user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   transactions WalletTransaction[]
-}
-
-model CoinPurchase {
-  id                String             @id @default(uuid())
-  userId            String
-  provider          PaymentProvider
-  providerReference String?            @unique
-  packageId         String
-  amountPaid        Decimal            @db.Decimal(10, 2)
-  currency          String
-  coinsPurchased    Int
-  status            CoinPurchaseStatus @default(PENDING)
-  metadata          Json?
-  completedAt       DateTime?
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([provider])
-  @@index([status])
 }
 
 model WalletTransaction {
