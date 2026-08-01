@@ -2,11 +2,9 @@ import { BadRequestError } from "../../../classes/errorClasses.js";
 import * as purchaseService from "../purchases/purchase.service.js";
 import { paymentProviderFactory } from "../providers/paymentProviderFactory.js";
 import { CoinPurchaseStatus } from "../wallet/wallet.constants.js";
-import { PurchaseStatus } from "../purchases/purchase.constants.js";
 
 const handlers = {
-  [CoinPurchaseStatus.COMPLETE]: purchaseService.completePurchase,
-
+  [CoinPurchaseStatus.COMPLETED]: purchaseService.completePurchase,
   [CoinPurchaseStatus.FAILED]: purchaseService.failPurchase,
 
   // [CoinPurchaseStatus.REFUNDED]: purchaseService.refundPurchase,
@@ -14,11 +12,16 @@ const handlers = {
 
 export const createCheckoutSession = async ({ purchaseId }) => {
   const purchase = await purchaseService.getPurchaseById(purchaseId);
- if (purchase.status !== CoinPurchaseStatus.PENDING) {
-   throw new BadRequestError("Purchase is no longer payable.");
- }
 
-  const provider = paymentProviderFactory.providers(purchase.provider);
+   if (!purchaseId || typeof purchaseId !== "string") {
+     throw new BadRequestError("Valid purchase ID is required");
+  }
+  
+  if (purchase.status !== CoinPurchaseStatus.PENDING) {
+    throw new BadRequestError("Purchase is no longer payable.");
+  }
+
+  const provider = paymentProviderFactory.get(purchase.provider);
 
   return provider.createCheckoutSession({
     purchase,
@@ -28,7 +31,7 @@ export const createCheckoutSession = async ({ purchaseId }) => {
 };
 
 export const handleWebhook = async ({ provider, headers, body }) => {
-  const paymentProvider = paymentProviderFactory.resolve(provider);
+  const paymentProvider = paymentProviderFactory.get(provider);
 
   const event = await paymentProvider.handleWebhook({
     headers,
@@ -51,7 +54,7 @@ export const handleWebhook = async ({ provider, headers, body }) => {
 // export const refund = async ({ purchaseId }) => {
 //   const purchase = await purchaseService.getPurchaseById(purchaseId);
 
-//   const provider = paymentProviderFactory.resolve(purchase.provider);
+//   const provider = paymentProviderFactory.get(purchase.provider);
 
 //   return provider.refund({
 //     purchase,

@@ -7,6 +7,8 @@ import * as purchaseDb from "./purchaseDbService.js";
 import * as coinPackageService from "../coin-packages/coinPackage.service.js";
 import * as walletService from "../wallet/wallet.service.js";
 import { PaymentProvider, PurchaseStatus } from "./purchase.constants.js";
+import { eventBus } from "../../../events/eventBus.js";
+import { EVENT_TYPES } from "../../../events/eventTypes.js";
 
 /*
 |--------------------------------------------------------------------------
@@ -36,23 +38,19 @@ export const createPurchase = async ({
     throw new BadRequestError("Invalid payment provider");
   }
 
-  // Get package details (coinPackage service handles validation)
   const coinPackage = coinPackageService.getPackageById(packageId);
-
-  // Create purchase with PENDING status
-  return purchaseDb.create(
-    {
+  return db.coinPurchase.create({
+    data: {
       userId,
       provider,
       packageId,
       coinsPurchased: coinPackage.coins,
       amountPaid: coinPackage.price,
-      currency: coinPackage.currency,
-      status: PurchaseStatus.PENDING,
-      metadata,
+      currency: coinPackage.currency || "USD", // Add default currency
+      status: CoinPurchaseStatus.PENDING,
+      metadata: metadata || {},
     },
-    db,
-  );
+  });
 };
 
 /**
@@ -115,31 +113,41 @@ export const completePurchase = async ({
     throw new BadRequestError("Valid providerReference is required");
   }
 
-  return prisma.$transaction(async (trx) => {
+  const { purchase, transitioned } = await prisma.$transaction(async (trx) => {
     // 1. Attempt to complete the purchase record
-    const { purchase, transitioned } = await completePurchaseRecord({
+    const result = await completePurchaseRecord({
       purchaseId,
       providerReference,
       metadata,
       db: trx,
     });
 
-    // 2. If no transition occurred (already terminal), return the purchase
-    if (!transitioned) {
-      return purchase;
+    // 2. If no transition occurred (already terminal), stop here
+    if (!result.transitioned) {
+      return result;
     }
 
     // 3. Credit the wallet (only for newly completed purchases)
     await walletService.creditPurchase({
-      userId: purchase.userId,
-      purchaseId: purchase.id,
-      coins: purchase.coinsPurchased,
+      userId: result.purchase.userId,
+      purchaseId: result.purchase.id,
+      coins: result.purchase.coinsPurchased,
       db: trx,
     });
 
-    // 4. Return the completed purchase
-    return purchase;
+    return result;
   });
+
+  // 4. Publish the completion event once the transaction has committed,
+  //    so listeners (e.g. influencer earnings) only fire on confirmed data.
+  if (transitioned) {
+    eventBus.emit(EVENT_TYPES.COIN_PURCHASE_COMPLETED, {
+      purchaseId: purchase.id,
+      userId: purchase.userId,
+    });
+  }
+
+  return purchase;
 };
 
 /**

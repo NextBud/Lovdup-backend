@@ -12,28 +12,18 @@ export class PaymentProvider {
   }
 
   /**
-   * Verify an incoming webhook.
-   *
-   * Each provider has its own signature verification.
-   *
-   * @param {Object} payload
-   *
-   * @returns {Promise<Object>}
-   */
-  async verifyWebhook(payload) {
-    throw new Error("verifyWebhook() not implemented");
-  }
-
-  /**
-   * Convert provider webhook payload
-   * into our internal Payment Event DTO.
+   * Verify and parse an incoming webhook, returning our internal
+   * PaymentEvent DTO. Each provider handles its own signature
+   * verification and payload mapping internally.
    *
    * @param {Object} payload
+   * @param {Object} payload.headers
+   * @param {Object} payload.body
    *
-   * @returns {Promise<Object>}
+   * @returns {Promise<import("../payment/paymentEvent.js").PaymentEvent>}
    */
-  async mapWebhookEvent(payload) {
-    throw new Error("mapWebhookEvent() not implemented");
+  async handleWebhook(payload) {
+    throw new Error("handleWebhook() not implemented");
   }
 
   /**
@@ -47,4 +37,3 @@ export class PaymentProvider {
     throw new Error("refund() not implemented");
   }
 }
-   

@@ -116,22 +116,17 @@ export const authenticateWithPassword = async ({
   if (!email || !password || !mode) {
     throw new BadRequestError("email, password and mode are required.");
   }
-
   if (!["LOGIN", "REGISTER"].includes(mode)) {
     throw new BadRequestError("mode must be LOGIN or REGISTER.");
   }
-
   const existingUser = await userDb.findUserByEmail(email);
   let user = existingUser;
-
   // ── REGISTER ──────────────────────────────
   if (mode === "REGISTER") {
     if (existingUser) {
       throw new ConflictException("An account with this email already exists.");
     }
-
     const passwordHash = await hashPassword(password);
-
     user = await prisma.$transaction(async (tx) => {
       const created = await userDb.createUser(
         {
@@ -143,9 +138,7 @@ export const authenticateWithPassword = async ({
         },
         tx,
       );
-
       await bootstrapNewUser({ userId: created.id, tx });
-
       return created;
     });
   }

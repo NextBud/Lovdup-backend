@@ -1,26 +1,17 @@
 import asyncWrapper from "../../../lib/asyncWrapper.js";
 import * as purchaseService from "./purchase.service.js";
 
-/**
- * POST /api/purchases
- * Create a new purchase
- *
- * Body:
- * {
- *   packageId: string,
- *   provider: "STRIPE" | "PAYPAL",
- *   metadata?: object
- * }
- */
 export const createPurchase = asyncWrapper(async (req, res) => {
   const userId = req.user.id;
   const { packageId, provider, metadata } = req.body;
+  
+  const purchaseMetadata = metadata || {};
 
   const purchase = await purchaseService.createPurchase({
     userId,
     packageId,
     provider,
-    metadata,
+    metadata: purchaseMetadata,
   });
 
   res.status(201).json({
@@ -30,10 +21,6 @@ export const createPurchase = asyncWrapper(async (req, res) => {
   });
 });
 
-/**
- * GET /api/purchases/:purchaseId
- * Get a specific purchase by ID
- */
 export const getPurchaseById = asyncWrapper(async (req, res) => {
   const userId = req.user.id;
   const { purchaseId } = req.params;
@@ -55,19 +42,15 @@ export const getPurchaseById = asyncWrapper(async (req, res) => {
   });
 });
 
-/**
- * GET /api/purchases
- * Get user's purchases with pagination
- *
- * Query params:
- * ?page=1&limit=20
- */
 export const getMyPurchases = asyncWrapper(async (req, res) => {
   const userId = req.user.id;
+  const { page, limit, status } = req.query;
 
   const purchases = await purchaseService.getMyPurchases({
     userId,
-    query: req.query,
+    page,
+    limit,
+    status,
   });
 
   res.status(200).json({
@@ -77,16 +60,6 @@ export const getMyPurchases = asyncWrapper(async (req, res) => {
   });
 });
 
-/**
- * POST /api/purchases/:purchaseId/complete
- * Complete a purchase (webhook or manual)
- *
- * Body:
- * {
- *   providerReference: string,
- *   metadata?: object
- * }
- */
 export const completePurchase = asyncWrapper(async (req, res) => {
   const { purchaseId } = req.params;
   const { providerReference, metadata } = req.body;
@@ -104,15 +77,6 @@ export const completePurchase = asyncWrapper(async (req, res) => {
   });
 });
 
-/**
- * POST /api/purchases/:purchaseId/fail
- * Fail a purchase (webhook or manual)
- *
- * Body:
- * {
- *   metadata?: object
- * }
- */
 export const failPurchase = asyncWrapper(async (req, res) => {
   const { purchaseId } = req.params;
   const { metadata } = req.body;
@@ -129,15 +93,6 @@ export const failPurchase = asyncWrapper(async (req, res) => {
   });
 });
 
-/**
- * POST /api/purchases/:purchaseId/cancel
- * Cancel a pending purchase
- *
- * Body:
- * {
- *   metadata?: object
- * }
- */
 export const cancelPurchase = asyncWrapper(async (req, res) => {
   const userId = req.user.id;
   const { purchaseId } = req.params;
@@ -163,4 +118,3 @@ export const cancelPurchase = asyncWrapper(async (req, res) => {
     data: cancelledPurchase,
   });
 });
-

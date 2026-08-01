@@ -1,11 +1,11 @@
-import asyncWrapper from "../../lib/asyncWrapper.js";
+import asyncWrapper from "../../../lib/asyncWrapper.js";
 import * as walletService from "./wallet.service.js";
+
+
 
 export const getMyWallet = asyncWrapper(async (req, res) => {
   const userId = req.user.id;
-
   const wallet = await walletService.getMyWallet(userId);
-
   res.status(200).json({
     success: true,
     message: "Wallet fetched successfully",
@@ -15,7 +15,6 @@ export const getMyWallet = asyncWrapper(async (req, res) => {
 
 export const getMyWalletTransactions = asyncWrapper(async (req, res) => {
   const userId = req.user.id;
-
   const transactions = await walletService.getMyWalletTransactions({
     userId,
     query: req.query,
@@ -30,9 +29,7 @@ export const getMyWalletTransactions = asyncWrapper(async (req, res) => {
 
 export const initializeWallet = asyncWrapper(async (req, res) => {
   const userId = req.user.id;
-
   const wallet = await walletService.initializeWallet(userId);
-
   res.status(201).json({
     success: true,
     message: "Wallet initialized successfully",
@@ -43,7 +40,6 @@ export const initializeWallet = asyncWrapper(async (req, res) => {
 export const creditCoins = asyncWrapper(async (req, res) => {
   const userId = req.user.id;
   const { coins, reason, referenceType, referenceId, metadata } = req.body;
-
   const result = await walletService.creditCoins({
     userId,
     coins,
@@ -52,7 +48,6 @@ export const creditCoins = asyncWrapper(async (req, res) => {
     referenceId,
     metadata,
   });
-
   res.status(200).json({
     success: true,
     message: "Coins credited successfully",
@@ -63,7 +58,6 @@ export const creditCoins = asyncWrapper(async (req, res) => {
 export const debitCoins = asyncWrapper(async (req, res) => {
   const userId = req.user.id;
   const { coins, reason, referenceType, referenceId, metadata } = req.body;
-
   const result = await walletService.debitCoins({
     userId,
     coins,
@@ -72,7 +66,6 @@ export const debitCoins = asyncWrapper(async (req, res) => {
     referenceId,
     metadata,
   });
-
   res.status(200).json({
     success: true,
     message: "Coins debited successfully",
@@ -83,7 +76,6 @@ export const debitCoins = asyncWrapper(async (req, res) => {
 export const refundCoins = asyncWrapper(async (req, res) => {
   const userId = req.user.id;
   const { coins, reason, referenceType, referenceId, metadata } = req.body;
-
   const result = await walletService.refundCoins({
     userId,
     coins,

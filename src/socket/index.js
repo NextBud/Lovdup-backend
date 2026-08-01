@@ -3,6 +3,9 @@ import { authenticateSocket } from "./socket.auth.js";
 import { registerChatHandlers } from "../modules/converstaions/conversation.socket.js";
 import { registerConversationListeners } from "../events/listeners/conversation.listeners.js";
 import { registerMatchingListeners } from "../events/listeners/matching.listeners.js";
+import { registerPurchaseListeners } from "../modules/finance/purchases/purchase.listener.js";
+
+
 
 export const initializeSocket = (server) => {
   console.info("[Socket] Initializing Socket.io server layer...");
@@ -35,6 +38,7 @@ export const initializeSocket = (server) => {
   console.log("[Socket] Registering cross-cutting event listeners...");
   registerConversationListeners(io);
   registerMatchingListeners(io);
+  registerPurchaseListeners();
 
   io.on("connection", (socket) => {
     const userId = socket.user?.id;

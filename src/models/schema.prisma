@@ -615,6 +615,49 @@ model VoiceAnswer {
   @@index([voicePromptId])
 }
 
+// Package model for coin purchases
+model Package {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  coins       Int
+  price       Decimal  @db.Decimal(10, 2)
+  currency    String   @default("USD")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  purchases   CoinPurchase[]
+
+  @@index([isActive])
+  @@index([coins])
+}
+
+// Update CoinPurchase to include relation
+model CoinPurchase {
+  id                String             @id @default(uuid())
+  userId            String
+  provider          PaymentProvider
+  providerReference String?            @unique
+  packageId         String
+  package           Package?           @relation(fields: [packageId], references: [id])
+  amountPaid        Decimal            @db.Decimal(10, 2)
+  currency          String
+  coinsPurchased    Int
+  status            CoinPurchaseStatus @default(PENDING)
+  metadata          Json?
+  completedAt       DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([provider])
+  @@index([status])
+  @@index([packageId])
+}
+
 // ---------------------------------------------------------------------------
 // Matching & Discovery Models
 // ---------------------------------------------------------------------------

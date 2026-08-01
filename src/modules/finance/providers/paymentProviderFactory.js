@@ -6,10 +6,15 @@ class PaymentProviderFactory {
   constructor() {
     this.providers = new Map([
       [PaymentProvider.STRIPE, new StripeProvider()],
-      // [PaymentProviderEnum.PAYPAL, new PaypalProvider()],
+      // [PaymentProvider.PAYPAL, new PaypalProvider()],
     ]);
   }
 
+  /**
+   * Resolve a provider instance by name.
+   * @param {string} provider
+   * @returns {import("../payment/paymentProvider.interface.js").PaymentProvider}
+   */
   get(provider) {
     const paymentProvider = this.providers.get(provider);
 
@@ -19,7 +24,14 @@ class PaymentProviderFactory {
 
     return paymentProvider;
   }
+
+  /**
+   * List the keys of all registered/supported providers.
+   * @returns {string[]}
+   */
+  list() {
+    return Array.from(this.providers.keys());
+  }
 }
 
-export const paymentProviderFactory =
-  new PaymentProviderFactory();
+export const paymentProviderFactory = new PaymentProviderFactory();

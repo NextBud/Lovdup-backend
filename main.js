@@ -4,6 +4,7 @@ import { env } from "./src/lib/env.js";
 import prisma from "./src/config/prisma.js";
 import { initializeSocket } from "./src/socket/index.js";
 
+
 const server = http.createServer(app);
 
 // Initialize WebSockets on top of our HTTP server

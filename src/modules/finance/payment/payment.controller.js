@@ -2,7 +2,19 @@ import asyncWrapper from "../../../lib/asyncWrapper.js";
 import * as paymentService from "./payment.service.js";
 
 export const createCheckoutSession = asyncWrapper(async (req, res) => {
+  console.log("Request body:", req.body);
+  console.log("purchaseId type:", typeof req.body.purchaseId);
+  console.log("purchaseId value:", req.body.purchaseId);
+
   const { purchaseId } = req.body;
+
+  // Additional validation
+  if (!purchaseId) {
+    return res.status(400).json({
+      success: false,
+      message: "Purchase ID is required",
+    });
+  }
 
   const session = await paymentService.createCheckoutSession({
     purchaseId,
@@ -10,9 +22,7 @@ export const createCheckoutSession = asyncWrapper(async (req, res) => {
 
   res.status(200).json({
     success: true,
-
     message: "Checkout session created.",
-
     data: session,
   });
 });

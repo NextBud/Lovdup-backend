@@ -36,6 +36,7 @@ export const EVENT_TYPES = {
 
   COINS_AWARDED: "COINS_AWARDED",
 
+  COIN_PURCHASE_COMPLETED: "COIN_PURCHASE_COMPLETED",
 
   // ---------------------------------------------------------------------------
   // Onboarding

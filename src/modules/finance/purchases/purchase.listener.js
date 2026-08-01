@@ -1,6 +1,6 @@
-import { EVENT_TYPES } from "../../events/eventTypes.js";
-import { safeListener } from "../../events/helpers/registerListener.js";
-import * as influencerEarningService from "../influencers/influencerEarning.service.js";
+import { EVENT_TYPES } from "../../../events/eventTypes.js";
+import { safeListener } from "../../../events/helpers/registerListener.js";
+import * as influencerEarningService from "../../influencers/influencerEarning.service.js";
 
 let registered = false;
 
