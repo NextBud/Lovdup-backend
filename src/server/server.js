@@ -9,7 +9,7 @@ import conversationRouter from "../modules/converstaions/conversation.routes.js"
 import packageRouter from "../modules/finance/coin-packages/coinPackage.routes.js";
 import purchaseRouter from "../modules/finance/purchases/purchase.routes.js";
 import paymentRouter from "../modules/finance/payment/payment.routes.js";
-import paymentWebhookRouter from "../modules/finance/payment/payment.webhook.routes.js";
+import paymentWebhookRouter from "../modules/finance/payment/Payment.webhook.routes.js";
 import walletRouter from "../modules/finance/wallet/walletRoute.js";
 import { errorMiddleware } from "../middlewares/errorMiddleware.js";
 
