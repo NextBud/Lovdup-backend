@@ -6,11 +6,13 @@ import { findPhoneById } from "../../services/user/userDbService.js";
 import { getPrice } from "../../config/pricing.service.js";
 import { eventBus } from "../../events/eventBus.js";
 import { EVENT_TYPES } from "../../events/eventTypes.js";
+
 import {
   BadRequestError,
   ForbiddenError,
   NotFoundException,
 } from "../../classes/errorClasses.js";
+
 import {
   WalletTransactionReason,
   WalletReferenceType,
@@ -26,20 +28,17 @@ const STAGE_META = {
     priceKey: "conversation.unlockStage2",
     reason: WalletTransactionReason.UNLOCK_STAGE_2,
   },
+
   3: {
     label: "photo sharing",
     priceKey: "conversation.unlockStage3",
     reason: WalletTransactionReason.UNLOCK_STAGE_3,
   },
+
   4: {
-    label: "deeper conversation",
+    label: "contact exchange",
     priceKey: "conversation.unlockStage4",
     reason: WalletTransactionReason.UNLOCK_STAGE_4,
-  },
-  5: {
-    label: "contact exchange",
-    priceKey: "conversation.unlockStage5",
-    reason: WalletTransactionReason.UNLOCK_STAGE_5,
   },
 };
 
@@ -51,16 +50,28 @@ const MESSAGE_STAGE_REQUIREMENT = {
   PHOTO: 3,
 };
 
+const MAX_STAGE = 4;
+
 // ---------------------------------------------------------------------------
 // Formatters
 // ---------------------------------------------------------------------------
 
-const formatConversationForList = (conversation, viewerId) => {
-  const { match, lastMessage, stage } = conversation;
 
+const buildPartnerInfo = (match, viewerId) => {
   const partner = match.userAId === viewerId ? match.userB : match.userA;
+
   const identity = partner?.profile?.identity ?? null;
   const photo = partner?.profilePhotos?.[0]?.url ?? null;
+
+  return {
+    id: partner.id,
+    name: identity ? `${identity.firstName} ${identity.lastName}`.trim() : null,
+    photo,
+  };
+};
+
+const formatConversationForList = (conversation, viewerId) => {
+  const { match, lastMessage, stage } = conversation;
 
   const hasUnread =
     lastMessage &&
@@ -71,15 +82,13 @@ const formatConversationForList = (conversation, viewerId) => {
     id: conversation.id,
     matchId: match.id,
     stage,
-    partner: {
-      id: partner.id,
-      name: identity
-        ? `${identity.firstName} ${identity.lastName}`.trim()
-        : null,
-      photo,
-    },
+
+    partner: buildPartnerInfo(match, viewerId),
+
     lastMessage: formatMessagePreview(lastMessage),
+
     unread: hasUnread,
+
     lastMessageAt: conversation.lastMessageAt,
   };
 };
@@ -121,13 +130,20 @@ export const formatMessage = (message) => {
     conversationId: message.conversationId,
     senderId: message.senderId,
     senderName: message.sender?.profile?.identity?.firstName ?? null,
+
     type: message.type,
+
     body: message.body ?? null,
+
     voiceUrl: message.voiceUrl ?? null,
     voiceDuration: message.voiceDuration ?? null,
+
     photoUrl: message.photoUrl ?? null,
+
     contactValue: message.contactValue ?? null,
+
     readAt: message.readAt ?? null,
+
     createdAt: message.createdAt,
   };
 };
@@ -138,19 +154,24 @@ export const formatMessage = (message) => {
 
 export const assertParticipant = (conversation, userId) => {
   const role = conversationDb.resolveParticipantRole(conversation, userId);
+
   if (!role) {
     throw new ForbiddenError("You are not a participant in this conversation");
   }
+
   return role;
 };
 
 export const assertStageAllowsMessageType = (conversation, type) => {
   const required = MESSAGE_STAGE_REQUIREMENT[type];
+
   if (required === undefined) {
     throw new BadRequestError(`Unknown message type: ${type}`);
   }
+
   if (conversation.stage < required) {
     const meta = STAGE_META[required];
+
     throw new BadRequestError(
       `Unlock ${meta.label} first to send this type of message`,
     );
@@ -159,6 +180,7 @@ export const assertStageAllowsMessageType = (conversation, type) => {
 
 const assertNotAlreadyUnlocked = (conversation, role, targetStage) => {
   const flagField = `user${role}Stage${targetStage}`;
+
   if (conversation[flagField] === true) {
     throw new BadRequestError(
       `You have already paid to unlock stage ${targetStage}`,
@@ -182,23 +204,26 @@ const buildMyUnlocks = (conversation, role) => ({
   stage2: conversation[`user${role}Stage2`] ?? false,
   stage3: conversation[`user${role}Stage3`] ?? false,
   stage4: conversation[`user${role}Stage4`] ?? false,
-  stage5: conversation[`user${role}Stage5`] ?? false,
 });
 
 const buildPartnerUnlocks = (conversation, partnerRole) => ({
   stage2: conversation[`user${partnerRole}Stage2`] ?? false,
+
   stage3: conversation[`user${partnerRole}Stage3`] ?? false,
+
   stage4: conversation[`user${partnerRole}Stage4`] ?? false,
-  stage5: conversation[`user${partnerRole}Stage5`] ?? false,
 });
 
 // ---------------------------------------------------------------------------
-// Public API
+// Conversation Reads
 // ---------------------------------------------------------------------------
 
 export const getConversations = async (userId) => {
   const conversations = await conversationDb.findAllForUser(userId);
-  return conversations.map((c) => formatConversationForList(c, userId));
+
+  return conversations.map((conversation) =>
+    formatConversationForList(conversation, userId),
+  );
 };
 
 export const getConversation = async (
@@ -213,7 +238,10 @@ export const getConversation = async (
   }
 
   const role = assertParticipant(conversation, userId);
+
   const partnerRole = role === "A" ? "B" : "A";
+
+  const partner = buildPartnerInfo(conversation.match, userId);
 
   await blockService.assertConversationNotBlocked(conversation);
 
@@ -231,50 +259,73 @@ export const getConversation = async (
   }
 
   const [messages, unlockHistory] = await Promise.all([
-    conversationDb.findMessages({ conversationId, cursor, limit: 30 }),
+    conversationDb.findMessages({
+      conversationId,
+      cursor,
+      limit: 30,
+    }),
+
     conversationDb.findUnlockHistory(conversationId),
   ]);
 
   const myUnlocks = buildMyUnlocks(conversation, role);
+
   const partnerUnlocks = buildPartnerUnlocks(conversation, partnerRole);
 
   const nextStage = conversation.stage + 1;
+
   const partnerReady =
-    nextStage <= 5 ? (partnerUnlocks[`stage${nextStage}`] ?? false) : false;
+    nextStage <= MAX_STAGE
+      ? (partnerUnlocks[`stage${nextStage}`] ?? false)
+      : false;
 
   let partnerContact = null;
+
   if (conversation.contactRevealed) {
     const partnerId =
       role === "A" ? conversation.userBId : conversation.userAId;
-    const partner = await findPhoneById(partnerId);
-    partnerContact = partner?.phone ?? null;
+
+    const partnerRecord = await findPhoneById(partnerId);
+
+    partnerContact = partnerRecord?.phone ?? null;
   }
 
   return {
     id: conversation.id,
     matchId: conversation.matchId,
+
+    partner,
+
     stage: conversation.stage,
+
     stageStartedAt: conversation.stageStartedAt,
+
     lastActivityAt: conversation.lastActivityAt,
+
     myUnlocks,
     partnerUnlocks,
     partnerReady,
+
     contactRevealed: conversation.contactRevealed,
+
     partnerContact,
+
     unlockHistory,
+
     messages: messages.map(formatMessage).reverse(),
+
     nextCursor:
       messages.length === 30 ? messages[messages.length - 1].id : null,
   };
 };
 
-/**
- * Unlock a conversation stage
- * Uses the new wallet service with proper transaction handling
- */
+// ---------------------------------------------------------------------------
+// Stage Unlock
+// ---------------------------------------------------------------------------
+
 export const unlockStage = async (conversationId, userId, targetStage) => {
-  if (![2, 3, 4, 5].includes(targetStage)) {
-    throw new BadRequestError("targetStage must be 2, 3, 4, or 5");
+  if (![2, 3, 4].includes(targetStage)) {
+    throw new BadRequestError("targetStage must be 2, 3, or 4");
   }
 
   const conversation = await conversationDb.findById(conversationId);
@@ -286,34 +337,34 @@ export const unlockStage = async (conversationId, userId, targetStage) => {
   const role = assertParticipant(conversation, userId);
 
   assertSequentialUnlock(conversation, targetStage);
+
   assertNotAlreadyUnlocked(conversation, role, targetStage);
+
   await blockService.assertConversationNotBlocked(conversation);
 
   const meta = STAGE_META[targetStage];
+
   const price = getPrice(meta.priceKey);
 
-  // Use Prisma transaction to ensure all operations are atomic
   const result = await prisma.$transaction(
     async (trx) => {
-      // 1. Debit coins using the wallet service
-      // The wallet service will handle the transaction internally
-      // and create the appropriate ledger entry
       await walletService.debitCoins({
         userId,
         coins: price.amount,
         reason: meta.reason,
         referenceType: WalletReferenceType.CONVERSATION,
         referenceId: conversationId,
+
         metadata: {
           conversationId,
           targetStage,
           stageLabel: meta.label,
           price: price.amount,
         },
+
         db: trx,
       });
 
-      // 2. Create unlock record
       await conversationDb.createUnlockRecord(
         {
           conversationId,
@@ -323,7 +374,6 @@ export const unlockStage = async (conversationId, userId, targetStage) => {
         trx,
       );
 
-      // 3. Apply stage unlock and check if stage advances
       const unlockResult = await conversationDb.applyStageUnlock(
         {
           conversationId,
@@ -344,7 +394,6 @@ export const unlockStage = async (conversationId, userId, targetStage) => {
     },
   );
 
-  // Emit events (outside transaction)
   eventBus.emit(EVENT_TYPES.STAGE_UNLOCK_REQUESTED, {
     conversationId,
     targetStage,
@@ -362,12 +411,20 @@ export const unlockStage = async (conversationId, userId, targetStage) => {
 
   return {
     stage: result.conversation.stage,
+
     didAdvance: result.didAdvance,
+
     unlockedStage: result.unlockedStage,
+
     myUnlocks: buildMyUnlocks(result.conversation, result.role),
+
     price: result.price,
   };
 };
+
+// ---------------------------------------------------------------------------
+// Socket / Conversation Lifecycle
+// ---------------------------------------------------------------------------
 
 export const joinConversation = async (conversationId, userId) => {
   const conversation = await conversationDb.findById(conversationId);
@@ -377,6 +434,7 @@ export const joinConversation = async (conversationId, userId) => {
   }
 
   assertParticipant(conversation, userId);
+
   await blockService.assertConversationNotBlocked(conversation);
 
   const result = await conversationDb.markMessagesRead(conversationId, userId);
@@ -391,6 +449,10 @@ export const joinConversation = async (conversationId, userId) => {
 
   return conversation;
 };
+
+// ---------------------------------------------------------------------------
+// Messages
+// ---------------------------------------------------------------------------
 
 export const sendMessage = async (
   conversationId,
@@ -408,7 +470,9 @@ export const sendMessage = async (
   }
 
   assertParticipant(conversation, senderId);
+
   assertStageAllowsMessageType(conversation, type);
+
   await blockService.assertConversationNotBlocked(conversation);
 
   if (type === "TEXT" && !body?.trim()) {
@@ -427,10 +491,15 @@ export const sendMessage = async (
     conversationId,
     senderId,
     type,
+
     body: type === "TEXT" ? body.trim() : null,
+
     voiceUrl: type === "VOICE" ? voiceUrl : null,
+
     voiceDuration: type === "VOICE" ? (voiceDuration ?? null) : null,
+
     photoUrl: type === "PHOTO" ? photoUrl : null,
+
     contactValue: null,
   });
 
@@ -444,6 +513,10 @@ export const sendMessage = async (
 
   return formatted;
 };
+
+// ---------------------------------------------------------------------------
+// Read State
+// ---------------------------------------------------------------------------
 
 export const markRead = async (conversationId, userId) => {
   const conversation = await conversationDb.findById(conversationId);
@@ -467,16 +540,28 @@ export const markRead = async (conversationId, userId) => {
   return result;
 };
 
+// ---------------------------------------------------------------------------
+// Conversation Creation
+// ---------------------------------------------------------------------------
+
 export const createConversationForMatch = async (matchId) => {
   const conversation = await conversationDb.createForMatch(matchId);
 
   const systemMsg = await conversationDb.createSystemMessage({
     conversationId: conversation.id,
+
     body: "You matched ❤️",
   });
 
-  return { conversation, systemMessage: formatMessage(systemMsg) };
+  return {
+    conversation,
+    systemMessage: formatMessage(systemMsg),
+  };
 };
+
+// ---------------------------------------------------------------------------
+// Blocking
+// ---------------------------------------------------------------------------
 
 export const blockConversation = async (
   conversationId,

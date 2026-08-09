@@ -37,5 +37,5 @@ export const CONVERSATION_STAGES = {
   TEXT: 1,
   VOICE: 2,
   PHOTO: 3,
-  CONTACT: 5,
+  CONTACT: 4,
 };

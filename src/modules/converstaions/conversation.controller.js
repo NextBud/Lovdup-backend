@@ -1,5 +1,11 @@
 import * as conversationService from "./conversation.service.js";
-import  asyncWrapper from "../../lib/asyncWrapper.js";
+import * as conversationMedia from "./conversation.media.js";
+
+import asyncWrapper from "../../lib/asyncWrapper.js";
+
+// ---------------------------------------------------------------------------
+// Conversations
+// ---------------------------------------------------------------------------
 
 export const getConversations = asyncWrapper(async (req, res) => {
   const conversations = await conversationService.getConversations(req.user.id);
@@ -7,19 +13,6 @@ export const getConversations = asyncWrapper(async (req, res) => {
   res.status(200).json({
     success: true,
     data: conversations,
-  });
-});
-
-export const sendMessage = asyncWrapper(async (req, res) => {
-  const message = await conversationService.sendMessage(
-    req.params.conversationId,
-    req.user.userId,
-    req.body,
-  );
-
-  res.status(201).json({
-    success: true,
-    data: message,
   });
 });
 
@@ -36,6 +29,27 @@ export const getConversation = asyncWrapper(async (req, res) => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Messages
+// ---------------------------------------------------------------------------
+
+export const sendMessage = asyncWrapper(async (req, res) => {
+  const message = await conversationService.sendMessage(
+    req.params.conversationId,
+    req.user.id,
+    req.body,
+  );
+
+  res.status(201).json({
+    success: true,
+    data: message,
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Stage
+// ---------------------------------------------------------------------------
+
 export const unlockStage = asyncWrapper(async (req, res) => {
   const result = await conversationService.unlockStage(
     req.params.conversationId,
@@ -48,6 +62,10 @@ export const unlockStage = asyncWrapper(async (req, res) => {
     data: result,
   });
 });
+
+// ---------------------------------------------------------------------------
+// Blocking
+// ---------------------------------------------------------------------------
 
 export const blockConversation = asyncWrapper(async (req, res) => {
   const result = await conversationService.blockConversation(
@@ -62,20 +80,32 @@ export const blockConversation = asyncWrapper(async (req, res) => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Media
+// ---------------------------------------------------------------------------
+
 export const uploadVoiceMessage = asyncWrapper(async (req, res) => {
   const result = await conversationMedia.uploadVoice(
     req.params.conversationId,
-    req.user.userId,
+    req.user.id,
     req.file,
   );
-  res.status(201).json({ success: true, data: result });
+
+  res.status(201).json({
+    success: true,
+    data: result,
+  });
 });
 
 export const uploadPhotoMessage = asyncWrapper(async (req, res) => {
   const result = await conversationMedia.uploadPhoto(
     req.params.conversationId,
-    req.user.userId,
+    req.user.id,
     req.file,
   );
-  res.status(201).json({ success: true, data: result });
+
+  res.status(201).json({
+    success: true,
+    data: result,
+  });
 });

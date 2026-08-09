@@ -1,9 +1,12 @@
 import * as conversationDb from "./conversation.db.js";
+
 import {
   assertParticipant,
   assertStageAllowsMessageType,
 } from "./conversation.service.js";
-import { processMediaUploads } from "../../middlewares/processMediaUploads.js"; // adjust to your actual path
+
+import { processMediaUploads } from "../../middlewares/processMediaUploads.js";
+
 import {
   NotFoundException,
   BadRequestError,
@@ -25,20 +28,30 @@ const uploadConversationMedia = async (
   }
 
   const conversation = await conversationDb.findById(conversationId);
+
   if (!conversation) {
     throw new NotFoundException("Conversation not found");
   }
 
   assertParticipant(conversation, userId);
-  assertStageAllowsMessageType(conversation, messageType);
+
+  await assertStageAllowsMessageType(conversation, messageType);
+
+  const mediaType = MEDIA_TYPE_BY_MESSAGE_TYPE[messageType];
+
+  if (!mediaType) {
+    throw new BadRequestError(`Unsupported media message type: ${messageType}`);
+  }
 
   const [uploaded] = await processMediaUploads({
     files: [file],
     folder: `conversations/${conversationId}`,
-    mediaType: MEDIA_TYPE_BY_MESSAGE_TYPE[messageType],
+    mediaType,
   });
 
-  return { url: uploaded.url };
+  return {
+    url: uploaded.url,
+  };
 };
 
 export const uploadVoice = (conversationId, userId, file) =>

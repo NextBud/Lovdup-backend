@@ -21,6 +21,60 @@ export const findById = async (conversationId, trx = null) => {
   return dbClient(trx).conversation.findUnique({
     where: { id: conversationId },
     include: {
+      match: {
+        include: {
+          userA: {
+            select: {
+              id: true,
+              profile: {
+                select: {
+                  identity: {
+                    select: {
+                      firstName: true,
+                      lastName: true,
+                    },
+                  },
+                },
+              },
+              profilePhotos: {
+                where: {
+                  status: "ACTIVE",
+                  isPrimary: true,
+                },
+                select: {
+                  url: true,
+                },
+                take: 1,
+              },
+            },
+          },
+          userB: {
+            select: {
+              id: true,
+              profile: {
+                select: {
+                  identity: {
+                    select: {
+                      firstName: true,
+                      lastName: true,
+                    },
+                  },
+                },
+              },
+              profilePhotos: {
+                where: {
+                  status: "ACTIVE",
+                  isPrimary: true,
+                },
+                select: {
+                  url: true,
+                },
+                take: 1,
+              },
+            },
+          },
+        },
+      },
       lastMessage: true,
     },
   });
@@ -351,7 +405,9 @@ export const applyStageUnlock = async (
   trx = null,
 ) => {
   const flagField = `user${role}Stage${targetStage}`;
+
   const partnerRole = role === "A" ? "B" : "A";
+
   const partnerFlagField = `user${partnerRole}Stage${targetStage}`;
 
   const run = async (tx) => {
@@ -359,6 +415,7 @@ export const applyStageUnlock = async (
       where: {
         id: conversationId,
       },
+
       data: {
         [flagField]: true,
       },
@@ -370,6 +427,10 @@ export const applyStageUnlock = async (
       },
     });
 
+    if (!fresh) {
+      throw new NotFoundException("Conversation not found");
+    }
+
     if (fresh[partnerFlagField]) {
       const updateData = {
         stage: targetStage,
@@ -377,7 +438,8 @@ export const applyStageUnlock = async (
         lastActivityAt: new Date(),
       };
 
-      if (targetStage === 5) {
+      // Stage 4 is the terminal contact-reveal stage.
+      if (targetStage === 4) {
         updateData.contactRevealed = true;
         updateData.contactRevealedAt = new Date();
       }
@@ -386,6 +448,7 @@ export const applyStageUnlock = async (
         where: {
           id: conversationId,
         },
+
         data: updateData,
       });
 

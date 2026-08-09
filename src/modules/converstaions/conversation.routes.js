@@ -1,23 +1,36 @@
 import { Router } from "express";
 import * as conversationController from "./conversation.controller.js";
-import { authMiddleware } from "../../middlewares/authMiddleware.js"; 
+import { authMiddleware } from "../../middlewares/authMiddleware.js";
 import {
   handleConversationVoiceUpload,
   handleConversationPhotoUpload,
-} from "../../middlewares/mediaUploadMiddleware.js"
+} from "../../middlewares/mediaUploadMiddleware.js";
 import { validateBody } from "../../middlewares/validator/validator.js";
 import { sendMessageSchema } from "./conversation.validation.js";
 
 
+
 const conversationRouter = Router();
 
-conversationRouter.get("/", authMiddleware, conversationController.getConversations);
+// ---------------------------------------------------------------------------
+// Conversations
+// ---------------------------------------------------------------------------
+
+conversationRouter.get(
+  "/",
+  authMiddleware,
+  conversationController.getConversations,
+);
 
 conversationRouter.get(
   "/:conversationId",
   authMiddleware,
   conversationController.getConversation,
 );
+
+// ---------------------------------------------------------------------------
+// Messages
+// ---------------------------------------------------------------------------
 
 conversationRouter.post(
   "/:conversationId/messages",
@@ -26,11 +39,19 @@ conversationRouter.post(
   conversationController.sendMessage,
 );
 
+// ---------------------------------------------------------------------------
+// Stage
+// ---------------------------------------------------------------------------
+
 conversationRouter.post(
   "/:conversationId/unlock",
   authMiddleware,
   conversationController.unlockStage,
 );
+
+// ---------------------------------------------------------------------------
+// Blocking
+// ---------------------------------------------------------------------------
 
 conversationRouter.post(
   "/:conversationId/block",
@@ -38,6 +59,9 @@ conversationRouter.post(
   conversationController.blockConversation,
 );
 
+// ---------------------------------------------------------------------------
+// Media
+// ---------------------------------------------------------------------------
 
 conversationRouter.post(
   "/:conversationId/media/voice",
@@ -50,7 +74,6 @@ conversationRouter.post(
   "/:conversationId/media/photo",
   authMiddleware,
   handleConversationPhotoUpload,
-
   conversationController.uploadPhotoMessage,
 );
 
