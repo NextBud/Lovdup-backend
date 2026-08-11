@@ -1,23 +1,25 @@
 import { BadRequestError } from "../../../classes/errorClasses.js";
 import * as purchaseService from "../purchases/purchase.service.js";
 import { paymentProviderFactory } from "../providers/paymentProviderFactory.js";
-import { CoinPurchaseStatus } from "../wallet/wallet.constants.js";
+import {
+  PurchaseStatus,
+  PaymentProvider,
+} from "../purchases/purchase.constants.js";
 
 const handlers = {
-  [CoinPurchaseStatus.COMPLETED]: purchaseService.completePurchase,
-  [CoinPurchaseStatus.FAILED]: purchaseService.failPurchase,
-
-  // [CoinPurchaseStatus.REFUNDED]: purchaseService.refundPurchase,
+  [PurchaseStatus.COMPLETED]: purchaseService.completePurchase,
+  [PurchaseStatus.FAILED]: purchaseService.failPurchase,
+  // [PurchaseStatus.REFUNDED]: purchaseService.refundPurchase,
 };
 
 export const createCheckoutSession = async ({ purchaseId }) => {
-  const purchase = await purchaseService.getPurchaseById(purchaseId);
-
-   if (!purchaseId || typeof purchaseId !== "string") {
-     throw new BadRequestError("Valid purchase ID is required");
+  if (!purchaseId || typeof purchaseId !== "string") {
+    throw new BadRequestError("Valid purchase ID is required");
   }
+
+  const purchase = await purchaseService.getPurchaseById(purchaseId);
   
-  if (purchase.status !== CoinPurchaseStatus.PENDING) {
+  if (purchase.status !== PurchaseStatus.PENDING) {
     throw new BadRequestError("Purchase is no longer payable.");
   }
 

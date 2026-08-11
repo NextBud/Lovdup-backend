@@ -46,8 +46,8 @@ export const createPurchase = async ({
       packageId,
       coinsPurchased: coinPackage.coins,
       amountPaid: coinPackage.price,
-      currency: coinPackage.currency || "USD", // Add default currency
-      status: CoinPurchaseStatus.PENDING,
+      currency: coinPackage.currency || "GBP", // Add default currency
+      status: PurchaseStatus.PENDING,
       metadata: metadata || {},
     },
   });

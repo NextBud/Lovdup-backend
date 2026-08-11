@@ -1,9 +1,8 @@
 import { PaymentEvent } from "../payment/paymentEvent.js";
 import {
-  CoinPurchaseStatus,
+  PurchaseStatus,
   PaymentProvider,
-} from "../wallet/wallet.constants.js";
-
+} from "../purchases/purchase.constants.js";
 export const toPaymentEvent = (event) => {
   console.log("Mapping Stripe event:", event.type);
   console.log("Event data:", event.data.object);
@@ -11,7 +10,7 @@ export const toPaymentEvent = (event) => {
   switch (event.type) {
     case "checkout.session.completed":
       return new PaymentEvent({
-        action: CoinPurchaseStatus.COMPLETED,
+        action: PurchaseStatus.COMPLETED,
         provider: PaymentProvider.STRIPE,
         purchaseId: event.data.object.metadata.purchaseId,
         providerReference: event.data.object.id,
@@ -25,7 +24,7 @@ export const toPaymentEvent = (event) => {
 
     case "checkout.session.async_payment_failed":
       return new PaymentEvent({
-        action: CoinPurchaseStatus.FAILED,
+        action: PurchaseStatus.FAILED,
         provider: PaymentProvider.STRIPE,
         purchaseId: event.data.object.metadata.purchaseId,
         providerReference: event.data.object.id,

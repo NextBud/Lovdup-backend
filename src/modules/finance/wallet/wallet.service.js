@@ -18,11 +18,9 @@ import {
  * @returns {Promise<Object>} Created wallet
  */
 export const initializeWallet = async (userId) => {
-  return prisma.$transaction(async (trx) => {
-    // Create wallet with zero balance
-    const wallet = await walletDb.createForUser(userId, trx);
+  const result = await prisma.$transaction(async (trx) => {
+    await walletDb.createForUser(userId, trx);
 
-    // Credit welcome bonus through applyTransaction
     await applyTransaction({
       userId,
       type: WalletTransactionType.CREDIT,
@@ -34,8 +32,10 @@ export const initializeWallet = async (userId) => {
       db: trx,
     });
 
-    return wallet;
+    return walletDb.findByUserId(userId, trx);
   });
+
+  return result;
 };
 
 /**

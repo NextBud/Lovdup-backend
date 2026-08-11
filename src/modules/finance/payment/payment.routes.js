@@ -9,7 +9,7 @@ const paymentRouter = Router();
 paymentRouter.get("/", controller.getSupportedProviders);
 paymentRouter.post(
   "/checkout",
-  validateBody(createCheckoutSessionSchema),
+  validateBody(createCheckoutSessionSchema), authMiddleware,
   controller.createCheckoutSession,
 );
 paymentRouter.post("/refund", authMiddleware, controller.refund);
