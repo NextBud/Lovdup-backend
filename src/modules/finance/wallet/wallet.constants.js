@@ -44,6 +44,3 @@ export const CoinPurchaseStatus = {
   CANCELLED: "CANCELLED",
   REFUNDED: "REFUNDED",
 };
-
-
-export { PurchaseStatus as CoinPurchaseStatus, PaymentProvider } from "../purchases/purchase.constants.js";
