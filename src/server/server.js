@@ -12,16 +12,13 @@ import paymentRouter from "../modules/finance/payment/payment.routes.js";
 import paymentWebhookRouter from "../modules/finance/payment/Payment.webhook.routes.js";
 import walletRouter from "../modules/finance/wallet/walletRoute.js";
 import { errorMiddleware } from "../middlewares/errorMiddleware.js";
+import { corsOptions } from "../config/cors.js";
 
 const app = express();
-app.use(cors());
 
-app.set("trust proxy", 1);
-
-// Webhooks MUST be mounted before express.json() — provider signature
-// verification (e.g. Stripe) requires the raw, unparsed request body.
+app.use(cors(corsOptions));
 app.use("/api/v1/payment/webhooks", paymentWebhookRouter);
-
+app.set("trust proxy", 1);
 app.use(express.json());
 
 app.get("/", (req, res) => {

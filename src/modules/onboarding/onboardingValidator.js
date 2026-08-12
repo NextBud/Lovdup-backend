@@ -38,7 +38,7 @@ export const completeOnboardingSchema = Joi.object({
   ethnicity: Joi.string().trim().allow(null, "").optional(),
   languages: Joi.array().items(Joi.string().trim().min(1)).min(1).required(),
   occupation: Joi.string().trim().min(1).required(),
-
+  education: Joi.string().trim().min(1).required(),
   // Faith — aligned to onboarding.options.ts RELIGION_IMPORTANCE
   religion: Joi.string().trim().min(1).required(),
   religionImportance: Joi.string()
