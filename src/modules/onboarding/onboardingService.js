@@ -100,6 +100,16 @@ export const saveDraft = saveProgress;
 // ─────────────────────────────────────────────
 // COMPLETE ONBOARDING
 // ─────────────────────────────────────────────
+//
+// Only the DB writes that must be atomic together (profile + sub-models,
+// promoted photos, wallet bootstrap, staged-media cleanup, completion
+// status) live inside the transaction. Referral code creation and event
+// emission run AFTER it commits — they already tolerate failure without
+// rolling back onboarding (see the try/catch below), so there's no reason
+// to spend transaction-timeout budget on them. This keeps the transaction
+// short enough to comfortably clear Prisma's interactive-transaction
+// timeout, with the explicit `timeout`/`maxWait` below as extra headroom.
+// ─────────────────────────────────────────────
 
 export const completeOnboarding = async (userId, payload) => {
   // 1. Validate payload
@@ -125,151 +135,118 @@ export const completeOnboarding = async (userId, payload) => {
     throw new ConflictException("Onboarding already completed.");
   }
 
-  // 3. Transaction
-  return prisma.$transaction(async (tx) => {
-    const stagedMedia = await onboardingDb.findOnboardingMediaByUserId(
-      userId,
-      tx,
-    );
-
-    const stagedPhotos = stagedMedia
-      .filter((m) => m.mediaType === "image")
-      .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
-
-    const stagedVoices = stagedMedia.filter((m) => m.mediaType === "audio");
-
-    if (stagedPhotos.length < 2) {
-      throw new BadRequestError("At least 2 photos are required.");
-    }
-
-    if (stagedVoices.length < 5) {
-      throw new BadRequestError("All 5 voice recordings are required.");
-    }
-
-    // Split payload into sub-model shapes
-    const { identity, lifestyle, values, narrative } =
-      extractProfilePayloads(value);
-
-    // Create Profile + sub-models
-    const profile = await tx.profile.create({
-      data: {
+  // 3. Transaction — atomic writes only
+  const { profileId } = await prisma.$transaction(
+    async (tx) => {
+      const stagedMedia = await onboardingDb.findOnboardingMediaByUserId(
         userId,
-        onboardingCompleted: true,
-        completedAt: new Date(),
-        identity: { create: identity },
-        lifestyle: { create: lifestyle },
-        values: { create: values },
-        narrative: { create: narrative },
-      },
-    });
+        tx,
+      );
 
-    // Promote staged photos → ProfilePhoto
-    await tx.profilePhoto.createMany({
-      data: stagedPhotos.map((photo, index) => ({
-        userId,
-        profileId: profile.id,
-        url: photo.url,
-        publicId: photo.publicId,
-        mimeType: photo.mimeType,
-        size: photo.size,
-        position: index + 1,
-        isPrimary: index === 0,
-      })),
-    });
+      const stagedPhotos = stagedMedia
+        .filter((m) => m.mediaType === "image")
+        .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
 
-    // Promote staged voices → VoiceAnswer
-    await tx.voiceAnswer.createMany({
-      data: stagedVoices.map((voice) => ({
-        userId,
-        profileId: profile.id,
-        voicePromptId: voice.promptId,
-        url: voice.url,
-        publicId: voice.publicId,
-        mimeType: voice.mimeType,
-        size: voice.size,
-      })),
-    });
+      // Voice media is no longer required; we only enforce photos
+      if (stagedPhotos.length < 2) {
+        throw new BadRequestError("At least 2 photos are required.");
+      }
 
-    // Create Wallet
-    await tx.wallet.upsert({
-      where: { userId },
-      update: {},
-      create: { userId, balance: 0 },
-    });
+      // Split payload into sub-model shapes
+      const { identity, lifestyle, values, narrative } =
+        extractProfilePayloads(value);
 
-    // Clean up staged media
-    await onboardingDb.deleteOnboardingMediaByUserId(userId, tx);
-
-    // Mark complete
-    await onboardingDb.markCompleted(userId, tx);
-
-    // ─────────────────────────────────────────────
-    // CREATE REFERRAL CODE FOR THE USER
-    // ─────────────────────────────────────────────
-    let referralCode;
-    try {
-      // Check if user already has a referral code (shouldn't happen, but just in case)
-      const existingCode = await tx.referralCode.findUnique({
-        where: { userId },
+      // Create Profile + sub-models
+      const profile = await tx.profile.create({
+        data: {
+          userId,
+          onboardingCompleted: true,
+          completedAt: new Date(),
+          identity: { create: identity },
+          lifestyle: { create: lifestyle },
+          values: { create: values },
+          narrative: { create: narrative },
+        },
       });
 
-      if (!existingCode) {
-        // Create referral code for the newly onboarded user
-        referralCode = await createReferralCode(userId, tx);
-      } else {
-        referralCode = existingCode;
-      }
-    } catch (error) {
-      // Log error but don't fail onboarding if referral creation fails
-      console.error(
-        `Failed to create referral code for user ${userId}:`,
-        error,
-      );
-      // We'll still emit the event, but the listener might need to handle missing code
-    }
+      // Promote staged photos → ProfilePhoto
+      await tx.profilePhoto.createMany({
+        data: stagedPhotos.map((photo, index) => ({
+          userId,
+          profileId: profile.id,
+          url: photo.url,
+          publicId: photo.publicId,
+          mimeType: photo.mimeType,
+          size: photo.size,
+          position: index + 1,
+          isPrimary: index === 0,
+        })),
+      });
 
-    // ─────────────────────────────────────────────
-    // EMIT USER ONBOARDING COMPLETED EVENT
-    // ─────────────────────────────────────────────
-    // This will trigger the referral qualification listener
-    // which will check if the user was referred by someone
-    emitUserOnboardingCompleted({
-      userId,
-      profileId: profile.id,
-      referralCode: referralCode?.code,
-      timestamp: new Date(),
+      // Voice answers are no longer created; the voice tables remain for other uses.
+
+      // Create Wallet
+      await tx.wallet.upsert({
+        where: { userId },
+        update: {},
+        create: { userId, balance: 0 },
+      });
+
+      // Clean up staged media (including any leftover voice entries)
+      await onboardingDb.deleteOnboardingMediaByUserId(userId, tx);
+
+      // Mark complete
+      await onboardingDb.markCompleted(userId, tx);
+
+      return { profileId: profile.id };
+    },
+    {
+      timeout: 15000, // default is 5000ms — headroom for the multi-write sequence above
+      maxWait: 5000,
+    },
+  );
+
+  // ─────────────────────────────────────────────
+  // CREATE REFERRAL CODE FOR THE USER
+  // ─────────────────────────────────────────────
+  // Runs outside the transaction on purpose — see comment above
+  // completeOnboarding. Failure here must not undo onboarding.
+  let referralCode;
+  try {
+    const existingCode = await prisma.referralCode.findUnique({
+      where: { userId },
     });
 
-    return {
-      profileId: profile.id,
-      referralCode: referralCode?.code,
-      message: "Welcome to LovdUp.",
-    };
-  });
-};
-
-// ─────────────────────────────────────────────
-// VOICE PROMPTS
-// Read-only reference list the frontend fetches before recording so it
-// has real VoicePrompt ids to attach to each upload (see
-// onboardingMediaController.uploadOnboardingVoices, which validates
-// promptIds against this same table).
-// ─────────────────────────────────────────────
-
-// getVoicePrompts
-export const getVoicePrompts = async () => {
-  const prompts = await onboardingDb.findAllVoicePrompts();
-  if (!prompts.length) {
-    throw new NotFoundException("No voice prompts are currently configured.");
+    if (!existingCode) {
+      referralCode = await createReferralCode(userId);
+    } else {
+      referralCode = existingCode;
+    }
+  } catch (error) {
+    // Log error but don't fail onboarding if referral creation fails
+    console.error(`Failed to create referral code for user ${userId}:`, error);
+    // We'll still emit the event, but the listener might need to handle missing code
   }
-  
-  return prompts.map(p => ({
-    id: p.id,
-    question: p.question,
-    category: p.category,
-    order: p.order,
-  }));
+
+  // ─────────────────────────────────────────────
+  // EMIT USER ONBOARDING COMPLETED EVENT
+  // ─────────────────────────────────────────────
+  // This will trigger the referral qualification listener
+  // which will check if the user was referred by someone
+  emitUserOnboardingCompleted({
+    userId,
+    profileId,
+    referralCode: referralCode?.code,
+    timestamp: new Date(),
+  });
+
+  return {
+    profileId,
+    referralCode: referralCode?.code,
+    message: "Welcome to LovdUp.",
+  };
 };
+
 // ─────────────────────────────────────────────
 // RESET
 // ─────────────────────────────────────────────

@@ -57,7 +57,7 @@ export const markCompleted = async (userId, tx = null) => {
     data: {
       status: ONBOARDING_STATUS.COMPLETED,
       completedAt: new Date(),
-      currentStep: 23,
+      currentStep: 17,
       draftData: {},
     },
   });
@@ -110,22 +110,5 @@ export const findOnboardingMediaByUserId = async (userId, tx = null) => {
 export const deleteOnboardingMediaByUserId = async (userId, tx = null) => {
   return db(tx).onboardingMedia.deleteMany({
     where: { userId },
-  });
-};
-
-// ─────────────────────────────────────────────
-// VOICE PROMPTS (read-only reference data)
-// ─────────────────────────────────────────────
-
-export const findAllVoicePrompts = async (tx = null) => {
-  return db(tx).voicePrompt.findMany({
-    where: { isActive: true },
-    orderBy: { order: "asc" },
-    select: {
-      id: true,
-      question: true,
-      category: true,
-      order: true,
-    },
   });
 };

@@ -38,6 +38,7 @@ export const extractProfilePayloads = (payload) => {
     ethnicity: payload.ethnicity ?? null,
     languages: payload.languages,
     occupation: payload.occupation,
+    education: payload.education, 
   };
 
   const lifestyle = {
@@ -54,8 +55,8 @@ export const extractProfilePayloads = (payload) => {
     religion: payload.religion,
     religionImportance: payload.religionImportance,
     childrenPreference: payload.childrenPreference,
-    communicationStyle: payload.communicationStyle, // was personalCommStyle
-    tuesdayVibe: payload.tuesdayVibe, // was personalTuesdayVibe
+    personalCommStyle: payload.communicationStyle, // ← renamed from communicationStyle
+    personalTuesdayVibe: payload.tuesdayVibe, // ← renamed from tuesdayVibe
   };
 
   const narrative = {

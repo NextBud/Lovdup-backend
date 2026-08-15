@@ -13,12 +13,9 @@ export const ONBOARDING_SECTIONS = {
   PHOTOS: "photos",
 };
 
-export const FINAL_ONBOARDING_STEP = 23;
+export const FINAL_ONBOARDING_STEP = 16; // was 23, now 16 after removing voice steps
 
 export const CURRENT_DRAFT_VERSION = 1;
 
-// Max media counts enforced at both middleware and service layer
 export const MAX_ONBOARDING_PHOTOS = 4;
 export const MIN_ONBOARDING_PHOTOS = 2;
-export const MAX_ONBOARDING_VOICES = 5;
-export const REQUIRED_ONBOARDING_VOICES = 5;

@@ -1,6 +1,16 @@
-// Aligned with the frontend step registry (19 steps, single voice_recording).
-// Was 23 steps with voice_recording_1 through _5 — collapsed to one step
-// since the frontend handles all 5 prompts inside a single VoiceRecordingStep.
+// ─────────────────────────────────────────────
+// ONBOARDING STEP ORDER
+// ─────────────────────────────────────────────
+//
+// Aligned with the frontend step registry.
+//
+// Voice steps were removed:
+// - voice_questions
+// - voice_recording
+//
+// Auth remains part of the backend step registry,
+// while the frontend currently has 16 rendered steps.
+// ─────────────────────────────────────────────
 
 export const ONBOARDING_STEP_ORDER = [
   "name",
@@ -18,11 +28,12 @@ export const ONBOARDING_STEP_ORDER = [
   "communication",
   "tuesday_vibe",
   "about_me",
-  "auth",
-  "voice_questions",
-  "voice_recording", // single step — frontend records all 5 prompts here
   "photos",
 ];
+
+// ─────────────────────────────────────────────
+// GET STEP INDEX
+// ─────────────────────────────────────────────
 
 export const getStepIndex = (stepId) => {
   const index = ONBOARDING_STEP_ORDER.indexOf(stepId);
@@ -31,7 +42,11 @@ export const getStepIndex = (stepId) => {
     throw new Error(`Invalid onboarding step: ${stepId}`);
   }
 
-  return index + 1; // 1-based
+  return index + 1;
 };
 
-export const TOTAL_STEPS = ONBOARDING_STEP_ORDER.length; // 19
+// ─────────────────────────────────────────────
+// TOTAL STEPS
+// ─────────────────────────────────────────────
+
+export const TOTAL_STEPS = ONBOARDING_STEP_ORDER.length;
