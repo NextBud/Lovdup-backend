@@ -1,4 +1,4 @@
-import asyncWrapper from "../../lib/asyncWrapper.js";
+import  asyncWrapper  from "../../../lib/asyncWrapper.js";
 import * as discoveryService from "./discovery.service.js";
 
 export const requestDiscoveryMatches = asyncWrapper(async (req, res) => {

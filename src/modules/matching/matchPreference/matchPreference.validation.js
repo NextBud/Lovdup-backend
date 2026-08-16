@@ -37,7 +37,6 @@ export const upsertMatchPreferenceSchema = Joi.object({
   financialStabilityPreference: Joi.string().trim().required(),
   financialStagePreference: Joi.string().trim().required(),
   idealPartnerType: Joi.string().trim().required(),
-  matchVoicePrompt: Joi.string().trim().min(6).max(500).required(),
   minCompatibilityScore: Joi.number().integer().min(0).max(100).default(50),
 }).custom((value, helpers) => {
   if (value.ageMin > value.ageMax) {

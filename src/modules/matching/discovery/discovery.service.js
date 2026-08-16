@@ -1,33 +1,37 @@
-import prisma from "../../config/prisma.js";
-import { BadRequestError } from "../../lib/classes/errorClasses.js";
-import { getPrice } from "../../config/pricing.service.js";
-import * as walletService from "../../wallet/wallet.service.js";
-import * as matchPreferenceDb from "../matchPreference/matchPreference.db.js";
+import prisma from "../../../config/prisma.js";
+import { BadRequestError } from "../../../classes/errorClasses.js";
+import { getPrice } from "../../../config/pricing.service.js";
+import {
+  WalletReferenceType,
+  WalletTransactionReason,
+} from "../../finance/wallet/wallet.constants.js";
+import * as walletService from "../../finance/wallet/wallet.service.js";
+import * as matchPreferenceDb from "../matchRequest/matchPreference.db.js";
 import * as discoveryDb from "./discovery.db.js";
-import * as compatibilityScoreService from "../compatibilityScore/compatibilityScore.service.js";
+import * as compatibilityScoreService from "./compatibilityScore.service.js";
 
 const CANDIDATE_POOL_LIMIT = 20;
 const DISCOVERY_RESULT_LIMIT = 2;
 
+const dbClient = (trx) => trx || prisma;
+
 const calculateAge = (birthDate) => {
   if (!birthDate) return null;
+
   const today = new Date();
   const dob = new Date(birthDate);
+
   let age = today.getFullYear() - dob.getFullYear();
-  const m = today.getMonth() - dob.getMonth();
-  if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age -= 1;
+
+  const month = today.getMonth() - dob.getMonth();
+
+  if (month < 0 || (month === 0 && today.getDate() < dob.getDate())) {
+    age -= 1;
+  }
+
   return age;
 };
 
-/**
- * Map a raw candidate row (with nested profile sub-relations) to the
- * shape consumed by the frontend and the compatibility scorer.
- *
- * profile.identity  → name, age, gender, location, occupation, languages
- * profile.lifestyle → (scoring only, not surfaced directly)
- * profile.values    → (scoring only, not surfaced directly)
- * profile.narrative → aboutMe / snippet
- */
 const formatDiscoveryCandidate = ({ candidate, score }) => {
   const profile = candidate.profile;
   const identity = profile?.identity ?? null;
@@ -40,47 +44,38 @@ const formatDiscoveryCandidate = ({ candidate, score }) => {
     id: candidate.id,
     profileId: profile?.id ?? null,
 
-    // Identity fields
     firstName: identity?.firstName ?? null,
     lastName: identity?.lastName ?? null,
+
     name: identity ? `${identity.firstName} ${identity.lastName}`.trim() : null,
+
     age: calculateAge(identity?.birthDate),
+
     gender: identity?.gender ?? null,
+
     city: identity?.residenceCity ?? null,
+
     country: identity?.residenceCountry ?? null,
+
     occupation: identity?.occupation ?? null,
+
     languages: identity?.languages ?? [],
 
-    // Narrative
     aboutMe: narrative?.aboutMe ?? null,
+
     snippet: narrative?.aboutMe ?? null,
 
-    // Media
     photo: primaryPhoto?.url ?? null,
+
     photos: candidate.profilePhotos ?? [],
 
-    // Match score
     matchScore: score,
-
-    // First voice answer for the card preview
-    voicePrompt: firstVoiceAnswer
-      ? {
-          id: firstVoiceAnswer.id,
-          url: firstVoiceAnswer.url,
-          durationSeconds: firstVoiceAnswer.durationSeconds,
-          transcript: firstVoiceAnswer.transcript,
-          question: firstVoiceAnswer.voicePrompt?.question ?? null,
-          category: firstVoiceAnswer.voicePrompt?.category ?? null,
-        }
-      : null,
   };
 };
 
-// ---------------------------------------------------------------------------
-// Core generation logic (always called inside a transaction)
-// ---------------------------------------------------------------------------
-
 const generateDiscoveryMatches = async (viewerId, trx) => {
+  const db = dbClient(trx);
+
   const preference = await matchPreferenceDb.findByUserId(viewerId, trx);
 
   if (!preference) {
@@ -89,28 +84,15 @@ const generateDiscoveryMatches = async (viewerId, trx) => {
     );
   }
 
-  // Get viewer's profile with identity for location matching
-  const viewerProfile = await prisma.profile.findUnique({
-    where: { userId: viewerId },
-    include: { identity: true },
-    transaction: trx,
+  const viewerProfile = await db.profile.findUnique({
+    where: {
+      userId: viewerId,
+    },
+    include: {
+      identity: true,
+    },
   });
 
-  // Debit coins
-  await walletService.debitCoins({
-  userId: viewerId,
-  coins: price.amount,  
-  reason: price.action,
-  referenceType: WalletReferenceType.MATCH,  
-  referenceId: null,
-  metadata: { 
-    source: "discovery",
-    description: price.description  
-  },
-  db: trx, 
-});
-
-  // Pull candidate pool
   const candidates = await discoveryDb.findDiscoveryCandidates({
     viewerId,
     preferredGenders: preference.preferredGenders,
@@ -120,7 +102,6 @@ const generateDiscoveryMatches = async (viewerId, trx) => {
     trx,
   });
 
-  // Score every candidate in the pool
   const scoredCandidates = await Promise.all(
     candidates.map(async (candidate) => {
       const compatibilityScore =
@@ -128,14 +109,17 @@ const generateDiscoveryMatches = async (viewerId, trx) => {
           viewerId,
           candidate,
           viewerPreference: preference,
-          viewerIdentity: viewerProfile?.identity || null,  
+          viewerIdentity: viewerProfile?.identity ?? null,
           trx,
         });
 
-      return { candidate, compatibilityScore };
+      return {
+        candidate,
+        compatibilityScore,
+      };
     }),
   );
-  // Filter by viewer's minimum score threshold, then take the top N.
+
   const rankedCandidates = scoredCandidates
     .filter(
       ({ compatibilityScore }) =>
@@ -144,11 +128,34 @@ const generateDiscoveryMatches = async (viewerId, trx) => {
     .sort((a, b) => b.compatibilityScore.score - a.compatibilityScore.score)
     .slice(0, DISCOVERY_RESULT_LIMIT);
 
+  // Nothing worth showing → don't charge.
   if (!rankedCandidates.length) {
     return [];
   }
 
-  // Persist match results so these candidates are excluded from future pools.
+  // -----------------------------------------
+  // Charge for successful discovery
+  // -----------------------------------------
+
+  const price = getPrice("matching.discovery");
+
+  await walletService.debitCoins({
+    userId: viewerId,
+    coins: price.amount,
+    reason: price.action,
+    referenceType: WalletReferenceType.MATCH,
+    referenceId: null,
+    metadata: {
+      source: "discovery",
+      description: price.description,
+    },
+    db: trx,
+  });
+
+  // -----------------------------------------
+  // Persist discovery results
+  // -----------------------------------------
+
   const matchResultsPayload = rankedCandidates.map(
     ({ candidate, compatibilityScore }, index) => ({
       viewerId,
@@ -164,13 +171,13 @@ const generateDiscoveryMatches = async (viewerId, trx) => {
   await discoveryDb.createManyMatchResults(matchResultsPayload, trx);
 
   return rankedCandidates.map(({ candidate, compatibilityScore }) =>
-    formatDiscoveryCandidate({ candidate, score: compatibilityScore.score }),
+    formatDiscoveryCandidate({
+      candidate,
+      score: compatibilityScore.score,
+    }),
   );
 };
 
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
 
 export const requestDiscoveryMatches = async (viewerId, trx = null) => {
   if (trx) {

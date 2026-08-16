@@ -7,7 +7,6 @@ export const createMatchRequestSchema = Joi.object({
 
   message: Joi.string().trim().min(1).max(500).allow(null, "").optional(),
 
-  voiceNoteUrl: Joi.string().uri().allow(null, "").optional(),
 });
 
 export const respondToMatchRequestSchema = Joi.object({

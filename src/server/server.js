@@ -9,6 +9,7 @@ import conversationRouter from "../modules/converstaions/conversation.routes.js"
 import packageRouter from "../modules/finance/coin-packages/coinPackage.routes.js";
 import purchaseRouter from "../modules/finance/purchases/purchase.routes.js";
 import paymentRouter from "../modules/finance/payment/payment.routes.js";
+import discoveryRouter from "../modules/matching/discovery/discoveryRoutes.js";
 import paymentWebhookRouter from "../modules/finance/payment/Payment.webhook.routes.js";
 import walletRouter from "../modules/finance/wallet/walletRoute.js";
 import { errorMiddleware } from "../middlewares/errorMiddleware.js";
@@ -34,6 +35,7 @@ app.use("/api/v1/profile", profileRouter); // working
 app.use("/api/v1/matches", matchRouter); //working
 app.use("/api/v1/match-requests", matchRequestRouter); // working
 app.use("/api/v1/conversations", conversationRouter);
+app.use("/api/v1/discovery", discoveryRouter)
 app.use("/api/v1/package", packageRouter);
 app.use("/api/v1/purchase", purchaseRouter);
 app.use("/api/v1/payment", paymentRouter);
