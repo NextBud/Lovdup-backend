@@ -9,7 +9,6 @@ const allowedOrigins = (
 
 export const corsOptions = {
   origin(origin, callback) {
-    // Allow server-to-server requests, Postman, health checks, etc.
     if (!origin) {
       return callback(null, true);
     }
@@ -18,18 +17,17 @@ export const corsOptions = {
       return callback(null, true);
     }
 
-    return callback(new Error("CORS origin not allowed"));
+    console.warn("[CORS] rejected origin:", JSON.stringify(origin));
+    console.warn("[CORS] allowedOrigins:", JSON.stringify(allowedOrigins));
+
+    return callback(null, false);
   },
 
   credentials: true,
 
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
 
-  allowedHeaders: [
-    "Content-Type",
-    "Authorization",
-    "X-Requested-With",
-  ],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
 
   exposedHeaders: [],
 
