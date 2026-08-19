@@ -13,6 +13,12 @@ export const findUserByPhone = async (phone, tx = null) => {
   });
 };
 
+export const findUserByEmail = async (email, tx = null) => {
+  return db(tx).user.findUnique({
+    where: { email },
+  });
+};
+
 export const findUserById = async (userId, include = {}, tx = null) => {
   return db(tx).user.findUnique({
     where: { id: userId },
@@ -85,12 +91,12 @@ export const createOnboardingProgress = async (userId, tx = null) => {
 // AUTH PROVIDER
 // ─────────────────────────────────────────────
 
-export const upsertAuthProvider = async (userId, uid, tx = null) => {
+export const upsertLocalAuthProvider = async (userId, tx = null) => {
   return db(tx).authProvider.upsert({
     where: {
       provider_providerUid: {
-        provider: "FIREBASE",
-        providerUid: uid,
+        provider: "LOCAL",
+        providerUid: userId,
       },
     },
     update: {
@@ -98,8 +104,8 @@ export const upsertAuthProvider = async (userId, uid, tx = null) => {
     },
     create: {
       userId,
-      provider: "FIREBASE",
-      providerUid: uid,
+      provider: "LOCAL",
+      providerUid: userId,
     },
   });
 };
@@ -219,39 +225,33 @@ export const revokeAllSessions = async (userId, tx = null) => {
  *
  * Everything happens inside the caller's transaction.
  */
-export const createUserWithOnboarding = async (
-  { phone, email, emailVerified = false },
-  uid,
+export const createLocalUserWithOnboarding = async (
+  { email, passwordHash },
   tx = null,
 ) => {
-  const data = {
-    phone,
-    phoneVerified: true,
-
-    // Email is optional.
-    email: email || null,
-    emailVerified: !!emailVerified,
-
-    authProviders: {
-      create: {
-        provider: "FIREBASE",
-        providerUid: uid,
-      },
-    },
-
-    onboardingProgress: {
-      create: {
-        status: "NOT_STARTED",
-        currentStep: 1,
-        maxReachedStep: 1,
-        completedSections: [],
-        draftData: {},
-        draftVersion: 1,
-      },
-    },
-  };
-
   return db(tx).user.create({
-    data,
+    data: {
+      email,
+      passwordHash,
+      emailVerified: false,
+
+      authProviders: {
+        create: {
+          provider: "LOCAL",
+          providerUid: email,
+        },
+      },
+
+      onboardingProgress: {
+        create: {
+          status: "NOT_STARTED",
+          currentStep: 1,
+          maxReachedStep: 1,
+          completedSections: [],
+          draftData: {},
+          draftVersion: 1,
+        },
+      },
+    },
   });
 };

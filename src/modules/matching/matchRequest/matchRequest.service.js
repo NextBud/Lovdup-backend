@@ -44,14 +44,14 @@ const ensureUserCanReceiveRequest = (user) => {
 };
 
 export const createMatchRequest = async (senderId, payload) => {
-  const { receiverId, type, message, voiceNoteUrl } = payload;
+  // ✅ REMOVED voiceNoteUrl from destructuring
+  const { receiverId, type, message } = payload;
   const price = getPrice("matching.requestMatch");
 
   if (senderId === receiverId) {
     throw new BadRequestError("You cannot send a match request to yourself");
   }
 
-  // All guards run before the transaction
   const receiver = await matchRequestDb.findUserById(receiverId);
   ensureUserCanReceiveRequest(receiver);
 
@@ -67,11 +67,9 @@ export const createMatchRequest = async (senderId, payload) => {
     senderId: receiverId,
     receiverId: senderId,
   });
-
   const shouldAutoMatch =
     reverseRequest?.status === "PENDING" && !hasRequestExpired(reverseRequest);
 
-  // Transaction lives entirely in the DB layer
   const { createdRequest, match } =
     await matchRequestDb.createRequestWithAutoMatch({
       senderId,
@@ -81,32 +79,31 @@ export const createMatchRequest = async (senderId, payload) => {
         receiverId,
         type,
         message: message || null,
-        voiceNoteUrl: voiceNoteUrl || null,
+        // ✅ REMOVED voiceNoteUrl from payload
         expiresAt: getMatchRequestExpiryDate(),
       },
       reverseRequestId: shouldAutoMatch ? reverseRequest.id : null,
       debitCoins: async (trx) => {
-        // ✅ Updated wallet call with new method signature
+        // ✅ KEPT: Backend still handles coin deduction
         await walletService.debitCoins({
           userId: senderId,
-          coins: price.amount, // ✅ Changed from 'amount' to 'coins'
-          reason: WalletTransactionReason.REQUEST_NEW_MATCHES, // ✅ Using constant
-          referenceType: WalletReferenceType.MATCH, // ✅ Using constant
-          referenceId: null, // Will be set after match is created
+          coins: price.amount,
+          reason: WalletTransactionReason.REQUEST_NEW_MATCHES,
+          referenceType: WalletReferenceType.MATCH,
+          referenceId: null,
           metadata: {
             receiverId,
             requestType: type,
             price: price.amount,
-            description: price.description, // Keep description in metadata
+            description: price.description,
           },
-          db: trx, // ✅ Changed from 'trx' to 'db'
+          db: trx,
         });
       },
       createMatch: matchDb.createMatchIfNotExists,
       normalizePair,
     });
 
-  // Events fire after the transaction commits
   eventBus.emit(EVENT_TYPES.MATCH_REQUEST_SENT, {
     requestId: createdRequest.id,
     senderId,

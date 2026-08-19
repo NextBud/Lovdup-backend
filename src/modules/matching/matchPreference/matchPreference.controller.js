@@ -1,4 +1,4 @@
-import asyncWrapper from "../../lib/asyncWrapper.js";
+import asyncWrapper from "../../../lib/asyncWrapper.js";
 import * as matchPreferenceService from "./matchPreference.service.js";
 
 export const getMyMatchPreference = asyncWrapper(async (req, res) => {

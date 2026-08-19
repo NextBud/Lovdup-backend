@@ -13,11 +13,24 @@ import * as voiceAnswerDb from "./voiceAnswerDbService.js";
 
 const calculateAge = (birthDate) => {
   if (!birthDate) return null;
+
+  const date = birthDate instanceof Date ? birthDate : new Date(birthDate);
+  if (Number.isNaN(date.getTime())) return null;
+
+  const year = date.getUTCFullYear();
+  const month = date.getUTCMonth() + 1;
+  const day = date.getUTCDate();
+
   const today = new Date();
-  const dob = new Date(birthDate);
-  let age = today.getFullYear() - dob.getFullYear();
-  const m = today.getMonth() - dob.getMonth();
-  if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age -= 1;
+  let age = today.getUTCFullYear() - year;
+
+  if (
+    today.getUTCMonth() + 1 < month ||
+    (today.getUTCMonth() + 1 === month && today.getUTCDate() < day)
+  ) {
+    age--;
+  }
+
   return age;
 };
 
@@ -79,14 +92,14 @@ const formatProfile = (profile) => {
     photos: profilePhotos ?? [],
     photo: profilePhotos?.[0]?.url ?? null,
 
-    voiceAnswers: (voiceAnswers ?? []).map((a) => ({
-      id: a.id,
-      url: a.url,
-      durationSeconds: a.durationSeconds,
-      transcript: a.transcript,
-      question: a.voicePrompt?.question ?? null,
-      category: a.voicePrompt?.category ?? null,
-    })),
+    // voiceAnswers: (voiceAnswers ?? []).map((a) => ({
+    //   id: a.id,
+    //   url: a.url,
+    //   durationSeconds: a.durationSeconds,
+    //   transcript: a.transcript,
+    //   question: a.voicePrompt?.question ?? null,
+    //   category: a.voicePrompt?.category ?? null,
+    // })),
   };
 };
 
@@ -115,12 +128,15 @@ export const upsertIdentity = async (userId, payload) => {
 
     await profileDb.upsertProfileIdentity(profile.id, payload, tx);
 
-    const percent = await profileDb.recalculateCompletionPercent(
-      profile.id,
-      tx,
-    );
+    const { completionPercent, onboardingCompleted, completedAt } =
+      await profileDb.recalculateCompletionPercent(profile.id, tx);
 
-    return { profileId: profile.id, completionPercent: percent };
+    return {
+      profileId: profile.id,
+      completionPercent,
+      onboardingCompleted,
+      completedAt,
+    };
   });
 };
 
@@ -139,12 +155,15 @@ export const upsertLifestyle = async (userId, payload) => {
 
     await profileDb.upsertProfileLifestyle(profile.id, payload, tx);
 
-    const percent = await profileDb.recalculateCompletionPercent(
-      profile.id,
-      tx,
-    );
+    const { completionPercent, onboardingCompleted, completedAt } =
+      await profileDb.recalculateCompletionPercent(profile.id, tx);
 
-    return { profileId: profile.id, completionPercent: percent };
+    return {
+      profileId: profile.id,
+      completionPercent,
+      onboardingCompleted,
+      completedAt,
+    };
   });
 };
 
@@ -163,12 +182,15 @@ export const upsertValues = async (userId, payload) => {
 
     await profileDb.upsertProfileValues(profile.id, payload, tx);
 
-    const percent = await profileDb.recalculateCompletionPercent(
-      profile.id,
-      tx,
-    );
+    const { completionPercent, onboardingCompleted, completedAt } =
+      await profileDb.recalculateCompletionPercent(profile.id, tx);
 
-    return { profileId: profile.id, completionPercent: percent };
+    return {
+      profileId: profile.id,
+      completionPercent,
+      onboardingCompleted,
+      completedAt,
+    };
   });
 };
 
@@ -187,12 +209,15 @@ export const upsertNarrative = async (userId, payload) => {
 
     await profileDb.upsertProfileNarrative(profile.id, payload, tx);
 
-    const percent = await profileDb.recalculateCompletionPercent(
-      profile.id,
-      tx,
-    );
+    const { completionPercent, onboardingCompleted, completedAt } =
+      await profileDb.recalculateCompletionPercent(profile.id, tx);
 
-    return { profileId: profile.id, completionPercent: percent };
+    return {
+      profileId: profile.id,
+      completionPercent,
+      onboardingCompleted,
+      completedAt,
+    };
   });
 };
 
@@ -227,12 +252,15 @@ export const saveProfilePhotos = async (userId, photos) => {
 
     await profilePhotoDb.createProfilePhotos(photoRecords, tx);
 
-    const percent = await profileDb.recalculateCompletionPercent(
-      profile.id,
-      tx,
-    );
+    const { completionPercent, onboardingCompleted, completedAt } =
+      await profileDb.recalculateCompletionPercent(profile.id, tx);
 
-    return { profileId: profile.id, completionPercent: percent };
+    return {
+      profileId: profile.id,
+      completionPercent,
+      onboardingCompleted,
+      completedAt,
+    };
   });
 };
 
@@ -266,11 +294,14 @@ export const saveVoiceAnswers = async (userId, answers) => {
 
     await voiceAnswerDb.createVoiceAnswers(answerRecords, tx);
 
-    const percent = await profileDb.recalculateCompletionPercent(
-      profile.id,
-      tx,
-    );
+    const { completionPercent, onboardingCompleted, completedAt } =
+      await profileDb.recalculateCompletionPercent(profile.id, tx);
 
-    return { profileId: profile.id, completionPercent: percent };
+    return {
+      profileId: profile.id,
+      completionPercent,
+      onboardingCompleted,
+      completedAt,
+    };
   });
 };

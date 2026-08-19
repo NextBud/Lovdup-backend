@@ -13,7 +13,7 @@ export const ONBOARDING_SECTIONS = {
   PHOTOS: "photos",
 };
 
-export const FINAL_ONBOARDING_STEP = 16; // was 23, now 16 after removing voice steps
+export const FINAL_ONBOARDING_STEP = 16;
 
 export const CURRENT_DRAFT_VERSION = 1;
 

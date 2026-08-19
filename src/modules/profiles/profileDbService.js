@@ -1,5 +1,4 @@
 import prisma from "../../config/prisma.js";
-
 const dbClient = (tx) => tx || prisma;
 
 // ---------------------------------------------------------------------------
@@ -12,9 +11,9 @@ export const findProfileByUserId = async (userId, tx = null) => {
   return db.profile.findUnique({
     where: { userId },
     include: {
-      identity:  true,
+      identity: true,
       lifestyle: true,
-      values:    true,
+      values: true,
       narrative: true,
       profilePhotos: {
         where: { status: "ACTIVE" },
@@ -34,9 +33,9 @@ export const findProfileById = async (profileId, tx = null) => {
   return db.profile.findUnique({
     where: { id: profileId },
     include: {
-      identity:  true,
+      identity: true,
       lifestyle: true,
-      values:    true,
+      values: true,
       narrative: true,
     },
   });
@@ -137,51 +136,57 @@ export const recalculateCompletionPercent = async (profileId, tx = null) => {
   const profile = await db.profile.findUnique({
     where: { id: profileId },
     select: {
-      identity:  { select: { id: true } },
+      identity: { select: { id: true } },
       lifestyle: { select: { id: true } },
-      values:    { select: { id: true } },
+      values: { select: { id: true } },
       narrative: { select: { id: true } },
       profilePhotos: {
         where: { status: "ACTIVE" },
         select: { id: true },
         take: 1,
       },
-      voiceAnswers: {
-        where: { status: "ACTIVE" },
-        select: { id: true },
-        take: 1,
-      },
     },
   });
 
-  if (!profile) return 0;
+  if (!profile) {
+    return {
+      completionPercent: 0,
+      onboardingCompleted: false,
+      completedAt: null,
+    };
+  }
 
-  // Each section is worth 15%, photos 20%, voice 20%
-  const weights = {
-    identity:     15,
-    lifestyle:    15,
-    values:       15,
-    narrative:    15,
-    photos:       20,
-    voice:        20,
+  const completedSections = {
+    identity: Boolean(profile.identity),
+    lifestyle: Boolean(profile.lifestyle),
+    values: Boolean(profile.values),
+    narrative: Boolean(profile.narrative),
+    photos: profile.profilePhotos.length > 0,
   };
 
-  const percent =
-    (profile.identity    ? weights.identity    : 0) +
-    (profile.lifestyle   ? weights.lifestyle   : 0) +
-    (profile.values      ? weights.values      : 0) +
-    (profile.narrative   ? weights.narrative   : 0) +
-    (profile.profilePhotos?.length ? weights.photos : 0) +
-    (profile.voiceAnswers?.length  ? weights.voice  : 0);
+  const totalSections = Object.keys(completedSections).length;
 
-  await db.profile.update({
+  const completedCount =
+    Object.values(completedSections).filter(Boolean).length;
+
+  const completionPercent = Math.round(
+    (completedCount / totalSections) * 100,
+  );
+
+  const onboardingCompleted = completionPercent === 100;
+
+  return db.profile.update({
     where: { id: profileId },
     data: {
-      completionPercent: percent,
-      onboardingCompleted: percent === 100,
-      completedAt: percent === 100 ? new Date() : null,
+      completionPercent,
+      onboardingCompleted,
+      completedAt: onboardingCompleted ? new Date() : null,
+    },
+    select: {
+      id: true,
+      completionPercent: true,
+      onboardingCompleted: true,
+      completedAt: true,
     },
   });
-
-  return percent;
 };

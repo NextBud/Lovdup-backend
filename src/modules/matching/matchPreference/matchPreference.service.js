@@ -1,5 +1,5 @@
-import { NotFoundException } from "../../lib/classes/errorClasses.js";
-import * as matchPreferenceDb from "../../user/matchPreference.db.js";
+import { NotFoundException } from "../../../classes/errorClasses.js";
+import * as matchPreferenceDb from "../matchRequest/matchPreference.db.js";
 
 export const getMyMatchPreference = async (userId, trx = null) => {
   return matchPreferenceDb.findByUserId(userId, trx);

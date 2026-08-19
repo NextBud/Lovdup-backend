@@ -122,43 +122,57 @@ export const completeOnboarding = async (userId, payload) => {
     throw new BadRequestError(error.details.map((d) => d.message).join(", "));
   }
 
-  // 2. Guard: must have a progress row
-  const progress = await onboardingDb.findProgressByUserId(userId);
-
-  if (!progress) {
-    throw new NotFoundException(
-      "No onboarding session found. Start from step 1.",
-    );
-  }
-
-  if (progress.status === ONBOARDING_STATUS.COMPLETED) {
-    throw new ConflictException("Onboarding already completed.");
-  }
-
-  // 3. Transaction — atomic writes only
-  const { profileId } = await prisma.$transaction(
+  // 2. Transaction — atomic writes and race-condition guard
+  const result = await prisma.$transaction(
     async (tx) => {
+      // 2a. Guard against concurrent retries/double-clicks INSIDE the transaction.
+      // This ensures we see the most up-to-date committed state, preventing race conditions.
+      const progress = await tx.onboardingProgress.findUnique({
+        where: { userId },
+      });
+
+      if (!progress) {
+        throw new NotFoundException(
+          "No onboarding session found. Start from step 1.",
+        );
+      }
+
+      if (progress.status === ONBOARDING_STATUS.COMPLETED) {
+        // Already completed (e.g., concurrent request or previous success with network drop)
+        const existingProfile = await tx.profile.findUnique({
+          where: { userId },
+          select: { id: true },
+        });
+        return { profileId: existingProfile?.id, alreadyCompleted: true };
+      }
+
       const stagedMedia = await onboardingDb.findOnboardingMediaByUserId(
         userId,
         tx,
       );
-
       const stagedPhotos = stagedMedia
         .filter((m) => m.mediaType === "image")
         .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
 
-      // Voice media is no longer required; we only enforce photos
       if (stagedPhotos.length < 2) {
         throw new BadRequestError("At least 2 photos are required.");
       }
 
-      // Split payload into sub-model shapes
       const { identity, lifestyle, values, narrative } =
         extractProfilePayloads(value);
 
-      // Create Profile + sub-models
-      const profile = await tx.profile.create({
-        data: {
+      // 2b. Use upsert to ensure idempotency if a partial failure somehow left a Profile row
+      const profile = await tx.profile.upsert({
+        where: { userId },
+        update: {
+          onboardingCompleted: true,
+          completedAt: new Date(),
+          identity: { upsert: { create: identity, update: identity } },
+          lifestyle: { upsert: { create: lifestyle, update: lifestyle } },
+          values: { upsert: { create: values, update: values } },
+          narrative: { upsert: { create: narrative, update: narrative } },
+        },
+        create: {
           userId,
           onboardingCompleted: true,
           completedAt: new Date(),
@@ -169,7 +183,11 @@ export const completeOnboarding = async (userId, payload) => {
         },
       });
 
-      // Promote staged photos → ProfilePhoto
+      // 2c. Promote staged photos → ProfilePhoto
+      await tx.profilePhoto.deleteMany({
+        where: { profileId: profile.id },
+      });
+
       await tx.profilePhoto.createMany({
         data: stagedPhotos.map((photo, index) => ({
           userId,
@@ -183,34 +201,64 @@ export const completeOnboarding = async (userId, payload) => {
         })),
       });
 
-      // Voice answers are no longer created; the voice tables remain for other uses.
-
-      // Create Wallet
-      await tx.wallet.upsert({
+      // 1. Ensure wallet exists
+      const wallet = await tx.wallet.upsert({
         where: { userId },
         update: {},
         create: { userId, balance: 0 },
       });
 
-      // Clean up staged media (including any leftover voice entries)
+      // 2. Apply the 15-coin Welcome Bonus
+      const balanceBefore = wallet.balance;
+      const bonusAmount = 15;
+      const balanceAfter = balanceBefore + bonusAmount;
+
+      await tx.walletTransaction.create({
+        data: {
+          userId,
+          walletId: wallet.id,
+          type: "CREDIT",
+          amount: bonusAmount,
+          reason: "WELCOME_BONUS",
+          referenceType: "SYSTEM",
+          referenceId: null,
+          balanceBefore,
+          balanceAfter,
+          metadata: { welcome: true },
+        },
+      });
+
+      // 3. Update the wallet balance
+      await tx.wallet.update({
+        where: { userId },
+        data: { balance: balanceAfter },
+      });
+
+      // Clean up staged media
       await onboardingDb.deleteOnboardingMediaByUserId(userId, tx);
 
       // Mark complete
       await onboardingDb.markCompleted(userId, tx);
 
-      return { profileId: profile.id };
+      return { profileId: profile.id, alreadyCompleted: false };
     },
     {
-      timeout: 15000, // default is 5000ms — headroom for the multi-write sequence above
+      timeout: 15000, // headroom for the multi-write sequence
       maxWait: 5000,
     },
   );
 
+  // 3. If it was already completed, return early gracefully without re-emitting events
+  if (result.alreadyCompleted) {
+    return {
+      profileId: result.profileId,
+      message: "Onboarding already completed.",
+    };
+  }
+
   // ─────────────────────────────────────────────
   // CREATE REFERRAL CODE FOR THE USER
   // ─────────────────────────────────────────────
-  // Runs outside the transaction on purpose — see comment above
-  // completeOnboarding. Failure here must not undo onboarding.
   let referralCode;
   try {
     const existingCode = await prisma.referralCode.findUnique({
@@ -223,30 +271,25 @@ export const completeOnboarding = async (userId, payload) => {
       referralCode = existingCode;
     }
   } catch (error) {
-    // Log error but don't fail onboarding if referral creation fails
     console.error(`Failed to create referral code for user ${userId}:`, error);
-    // We'll still emit the event, but the listener might need to handle missing code
   }
 
   // ─────────────────────────────────────────────
   // EMIT USER ONBOARDING COMPLETED EVENT
   // ─────────────────────────────────────────────
-  // This will trigger the referral qualification listener
-  // which will check if the user was referred by someone
   emitUserOnboardingCompleted({
     userId,
-    profileId,
+    profileId: result.profileId,
     referralCode: referralCode?.code,
     timestamp: new Date(),
   });
 
   return {
-    profileId,
+    profileId: result.profileId,
     referralCode: referralCode?.code,
     message: "Welcome to LovdUp.",
   };
 };
-
 // ─────────────────────────────────────────────
 // RESET
 // ─────────────────────────────────────────────

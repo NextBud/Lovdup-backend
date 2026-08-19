@@ -17,7 +17,7 @@ import {
   upsertProfileValuesSchema,
   upsertProfileNarrativeSchema,
   saveProfilePhotosSchema,
-  saveVoiceAnswersSchema,
+  // saveVoiceAnswersSchema,
 } from "./profile.validation.js";
 
 const profileRouter = express.Router();
@@ -51,10 +51,10 @@ profileRouter.put(
   upsertNarrative,
 );
 profileRouter.put("/photos", validateBody(saveProfilePhotosSchema), savePhotos);
-profileRouter.put(
-  "/voice",
-  validateBody(saveVoiceAnswersSchema),
-  saveVoiceAnswers,
-);
+// profileRouter.put(
+//   "/voice",
+//   validateBody(saveVoiceAnswersSchema),
+//   saveVoiceAnswers,
+// );
 
 export default profileRouter;

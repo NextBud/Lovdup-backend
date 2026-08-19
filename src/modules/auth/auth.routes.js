@@ -12,14 +12,17 @@
  */
 
 import { Router } from "express";
-
 import { authMiddleware } from "../../middlewares/authMiddleware.js";
 import { validateBody } from "../../middlewares/validator/validator.js";
-
-import { phoneAuthSchema, refreshSchema } from "./auth.validators.js";
+import {
+  phoneAuthSchema,
+  refreshSchema,
+  emailAuthSchema,
+} from "./auth.validators.js";
 
 import {
   phoneAuth,
+  emailAuth,
   refresh,
   getMe,
   logout,
@@ -33,7 +36,7 @@ const authRouter = Router();
 // ─────────────────────────────────────────────
 
 authRouter.post("/phone", validateBody(phoneAuthSchema), phoneAuth);
-
+authRouter.post("/email", validateBody(emailAuthSchema), emailAuth);
 authRouter.post("/refresh", validateBody(refreshSchema), refresh);
 
 // ─────────────────────────────────────────────

@@ -2,6 +2,7 @@ import prisma from "../../config/prisma.js";
 import * as authDb from "./authDbService.js";
 import * as userDb from "../../services/user/userDbService.js";
 import { firebaseAuth } from "../../config/firebaseAdmin.js";
+import bcrypt from "bcryptjs";
 import { signAccessToken } from "../../lib/token.js";
 import { generateRefreshToken, hashToken } from "../../lib/sessionTokens.js";
 import {
@@ -55,6 +56,79 @@ const buildAuthResponse = async ({ user, tokens }) => {
     onboardingStatus: onboarding?.status ?? ONBOARDING_STATUS.NOT_STARTED,
     ...tokens,
   };
+};
+
+// ─────────────────────────────────────────────
+// EMAIL AUTH
+// ─────────────────────────────────────────────
+
+export const authenticateWithEmail = async ({
+  email,
+  password,
+  meta,
+}) => {
+  // 1. Find existing user
+  let user = await authDb.findUserByEmail(email);
+
+  // 2. Existing user
+  if (user) {
+    if (!user.passwordHash) {
+      throw new UnauthorizedException(
+        "This account does not have email authentication enabled.",
+      );
+    }
+
+    const passwordValid = await bcrypt.compare(
+      password,
+      user.passwordHash,
+    );
+
+    if (!passwordValid) {
+      throw new UnauthorizedException(
+        "Invalid email or password.",
+      );
+    }
+  }
+
+  // 3. New user
+  if (!user) {
+    const passwordHash = await bcrypt.hash(password, 12);
+
+    user = await prisma.$transaction(async (tx) => {
+      return authDb.createLocalUserWithOnboarding(
+        {
+          email,
+          passwordHash,
+        },
+        tx,
+      );
+    });
+  }
+
+  // 4. Account status
+  if (user.status !== "ACTIVE") {
+    throw new UnauthorizedException(
+      "This account is not active.",
+    );
+  }
+
+  // 5. Update last login
+  await authDb.updateLastLogin(user.id);
+
+  // 6. Create application session
+  const tokens = await prisma.$transaction(async (tx) =>
+    createSession({
+      user,
+      tx,
+      meta,
+    }),
+  );
+
+  // 7. Return the exact same auth response
+  return buildAuthResponse({
+    user,
+    tokens,
+  });
 };
 
 // ─────────────────────────────────────────────

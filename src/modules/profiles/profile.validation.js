@@ -114,15 +114,15 @@ export const saveProfilePhotosSchema = Joi.object({
 // Onboarding steps 18–22 — audio already uploaded to storage by middleware
 // ---------------------------------------------------------------------------
 
-const voiceAnswerSchema = Joi.object({
-  voicePromptId:   Joi.string().uuid().required(),
-  url:             Joi.string().uri().required(),
-  publicId:        Joi.string().trim().required(),
-  mimeType:        Joi.string().trim().required(),
-  size:            Joi.number().integer().positive().required(),
-  durationSeconds: Joi.number().integer().positive().allow(null).optional(),
-});
+// const voiceAnswerSchema = Joi.object({
+//   voicePromptId:   Joi.string().uuid().required(),
+//   url:             Joi.string().uri().required(),
+//   publicId:        Joi.string().trim().required(),
+//   mimeType:        Joi.string().trim().required(),
+//   size:            Joi.number().integer().positive().required(),
+//   durationSeconds: Joi.number().integer().positive().allow(null).optional(),
+// });
 
-export const saveVoiceAnswersSchema = Joi.object({
-  answers: Joi.array().items(voiceAnswerSchema).min(1).max(5).required(),
-});
+// export const saveVoiceAnswersSchema = Joi.object({
+//   answers: Joi.array().items(voiceAnswerSchema).min(1).max(5).required(),
+// });

@@ -6,6 +6,7 @@ import * as profileService from "./profileService.js";
  * Returns the authenticated user's full profile with all sub-relations.
  */
 export const getMyProfile = asyncWrapper(async (req, res) => {
+  console.log("Route hit")
   const userId = req.user.userId;
   const profile = await profileService.getMyProfile(userId);  
 

@@ -19,7 +19,6 @@ export const createPurchaseSchema = Joi.object({
   metadata: Joi.object().optional().default({}),
 });
 
-// Rest of your schemas...
 
 // Schema for completing a purchase
 export const completePurchaseSchema = Joi.object({

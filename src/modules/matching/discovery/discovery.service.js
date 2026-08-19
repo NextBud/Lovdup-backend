@@ -73,24 +73,15 @@ const formatDiscoveryCandidate = ({ candidate, score }) => {
   };
 };
 
-const generateDiscoveryMatches = async (viewerId, trx) => {
-  const db = dbClient(trx);
-
-  const preference = await matchPreferenceDb.findByUserId(viewerId, trx);
-
+const generateDiscoveryMatches = async (viewerId) => {
+  const preference = await matchPreferenceDb.findByUserId(viewerId);
   if (!preference) {
-    throw new BadRequestError(
-      "Set your match preferences before requesting matches",
-    );
+    throw new BadRequestError("Set your match preferences before requesting matches");
   }
 
-  const viewerProfile = await db.profile.findUnique({
-    where: {
-      userId: viewerId,
-    },
-    include: {
-      identity: true,
-    },
+  const viewerProfile = await prisma.profile.findUnique({
+    where: { userId: viewerId },
+    include: { identity: true },
   });
 
   const candidates = await discoveryDb.findDiscoveryCandidates({
@@ -99,95 +90,60 @@ const generateDiscoveryMatches = async (viewerId, trx) => {
     ageMin: preference.ageMin,
     ageMax: preference.ageMax,
     limit: CANDIDATE_POOL_LIMIT,
-    trx,
   });
 
-  const scoredCandidates = await Promise.all(
-    candidates.map(async (candidate) => {
-      const compatibilityScore =
-        await compatibilityScoreService.calculateAndUpsertCompatibilityScore({
-          viewerId,
-          candidate,
-          viewerPreference: preference,
-          viewerIdentity: viewerProfile?.identity ?? null,
-          trx,
-        });
-
-      return {
+  // Score sequentially (or with limited concurrency) OUTSIDE any transaction
+  const scoredCandidates = [];
+  for (const candidate of candidates) {
+    const compatibilityScore =
+      await compatibilityScoreService.calculateAndUpsertCompatibilityScore({
+        viewerId,
         candidate,
-        compatibilityScore,
-      };
-    }),
-  );
+        viewerPreference: preference,
+        viewerIdentity: viewerProfile?.identity ?? null,
+      });
+    scoredCandidates.push({ candidate, compatibilityScore });
+  }
 
   const rankedCandidates = scoredCandidates
-    .filter(
-      ({ compatibilityScore }) =>
-        compatibilityScore.score >= preference.minCompatibilityScore,
-    )
+    .filter(({ compatibilityScore }) => compatibilityScore.score >= preference.minCompatibilityScore)
     .sort((a, b) => b.compatibilityScore.score - a.compatibilityScore.score)
     .slice(0, DISCOVERY_RESULT_LIMIT);
 
-  // Nothing worth showing → don't charge.
-  if (!rankedCandidates.length) {
-    return [];
-  }
-
-  // -----------------------------------------
-  // Charge for successful discovery
-  // -----------------------------------------
+  if (!rankedCandidates.length) return [];
 
   const price = getPrice("matching.discovery");
+  const matchResultsPayload = rankedCandidates.map(({ candidate, compatibilityScore }, index) => ({
+    viewerId,
+    candidateId: candidate.id,
+    compatibilityScoreId: compatibilityScore.id,
+    score: compatibilityScore.score,
+    rank: index + 1,
+    reason: "COMPATIBLE",
+    dismissed: false,
+  }));
 
-  await walletService.debitCoins({
-    userId: viewerId,
-    coins: price.amount,
-    reason: price.action,
-    referenceType: WalletReferenceType.MATCH,
-    referenceId: null,
-    metadata: {
-      source: "discovery",
-      description: price.description,
-    },
-    db: trx,
+  // ONLY the atomic part goes in the transaction — short-lived, single connection, fast
+  await prisma.$transaction(async (tx) => {
+    await walletService.debitCoins({
+      userId: viewerId,
+      coins: price.amount,
+      reason: price.action,
+      referenceType: WalletReferenceType.MATCH,
+      referenceId: null,
+      metadata: { source: "discovery", description: price.description },
+      db: tx,
+    });
+
+    await discoveryDb.createManyMatchResults(matchResultsPayload, tx);
   });
 
-  // -----------------------------------------
-  // Persist discovery results
-  // -----------------------------------------
-
-  const matchResultsPayload = rankedCandidates.map(
-    ({ candidate, compatibilityScore }, index) => ({
-      viewerId,
-      candidateId: candidate.id,
-      compatibilityScoreId: compatibilityScore.id,
-      score: compatibilityScore.score,
-      rank: index + 1,
-      reason: "COMPATIBLE",
-      dismissed: false,
-    }),
-  );
-
-  await discoveryDb.createManyMatchResults(matchResultsPayload, trx);
-
   return rankedCandidates.map(({ candidate, compatibilityScore }) =>
-    formatDiscoveryCandidate({
-      candidate,
-      score: compatibilityScore.score,
-    }),
+    formatDiscoveryCandidate({ candidate, score: compatibilityScore.score }),
   );
 };
 
-
-export const requestDiscoveryMatches = async (viewerId, trx = null) => {
-  if (trx) {
-    return generateDiscoveryMatches(viewerId, trx);
-  }
-
-  return prisma.$transaction((transactionClient) =>
-    generateDiscoveryMatches(viewerId, transactionClient),
-  );
-};
+export const requestDiscoveryMatches = (viewerId) => generateDiscoveryMatches(viewerId);
 
 export const getLatestDiscoveryMatches = async (viewerId, trx = null) => {
   const results = await discoveryDb.findViewerMatchResults({
