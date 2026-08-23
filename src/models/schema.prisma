@@ -9,66 +9,66 @@ datasource db {
 }
 
 model User {
-  id                     String                @id @default(uuid())
-  email                  String?               @unique
-  passwordHash           String?
-  phone                  String?               @unique
-  whatsappPhone          String?
-  emailVerified          Boolean               @default(false)
-  phoneVerified          Boolean               @default(false)
-  verified               Boolean               @default(false)
-  role                   UserRole              @default(USER)
-  status                 UserStatus            @default(ACTIVE)
-  isActive               Boolean               @default(true)
-  isSuspended            Boolean               @default(false)
-  pausedAt               DateTime?
-  pausedReason           String?
-  pausedAdditionalNote   String?
-  deletedAt              DateTime?
-  permanentDeletionAt    DateTime?
-  deletedReason          String?
-  deletedAdditionalNote  String?
-  lastLoginAt            DateTime?
-  lastActiveAt           DateTime?
-  createdAt              DateTime              @default(now())
-  updatedAt              DateTime              @updatedAt
-  photosProcessingStatus MediaProcessingStatus @default(UPLOADING)
-  voiceProcessingStatus  MediaProcessingStatus @default(UPLOADING)
-  isInfluencer           Boolean               @default(false)
-  authProviders          AuthProvider[]
-  campaignsCreated       Campaign[]            @relation("CampaignCreator")
-  coinPurchases          CoinPurchase[]
-  compatibilityAsUserA   CompatibilityScore[]  @relation("CompatibilityUserA")
-  compatibilityAsUserB   CompatibilityScore[]  @relation("CompatibilityUserB")
-  conversationsAsUserA   Conversation[]        @relation("ConversationUserA")
-  conversationsAsUserB   Conversation[]        @relation("ConversationUserB")
-  conversationUnlocks    ConversationUnlock[]
-  influencerEarnings     InfluencerEarning[]
-  influencerProfile      InfluencerProfile?
-  influencerReferrals    InfluencerReferral?
-  matchesAsUserA         Match[]               @relation("MatchUserA")
-  matchesAsUserB         Match[]               @relation("MatchUserB")
-  matchPreference        MatchPreference?
-  receivedMatchRequests  MatchRequest[]        @relation("ReceivedMatchRequests")
-  sentMatchRequests      MatchRequest[]        @relation("SentMatchRequests")
-  candidateMatchResults  MatchResult[]         @relation("CandidateMatchResults")
-  viewedMatchResults     MatchResult[]         @relation("ViewerMatchResults")
-  messages               Message[]
-  onboardingMedia        OnboardingMedia[]
-  onboardingProgress     OnboardingProgress?
-  payouts                Payout[]
-  profile                Profile?
-  profilePhotos          ProfilePhoto[]
-  referralReceived       Referral?             @relation("ReferredUser")
-  referralsMade          Referral[]            @relation("Referrer")
-  referralCode           ReferralCode?
-  referralRewards        ReferralReward[]
-  refreshSessions        RefreshSession[]
-  blocksReceived         UserBlock[]           @relation("UserBlocksReceived")
-  blocksCreated          UserBlock[]           @relation("UserBlocksCreated")
-  voiceAnswers           VoiceAnswer[]
-  wallet                 Wallet?
-  walletTransactions     WalletTransaction[]
+  id                       String                @id @default(uuid())
+  email                    String?               @unique
+  passwordHash             String?
+  phone                    String?               @unique
+  whatsappPhone            String?
+  emailVerified            Boolean               @default(false)
+  phoneVerified            Boolean               @default(false)
+  verified                 Boolean               @default(false)
+  role                     UserRole              @default(USER)
+  status                   UserStatus            @default(ACTIVE)
+  isActive                 Boolean               @default(true)
+  isSuspended              Boolean               @default(false)
+  pausedAt                 DateTime?
+  pausedReason             String?
+  pausedAdditionalNote     String?
+  deletedAt                DateTime?
+  permanentDeletionAt      DateTime?
+  deletedReason            String?
+  deletedAdditionalNote    String?
+  lastLoginAt              DateTime?
+  lastActiveAt             DateTime?
+  createdAt                DateTime              @default(now())
+  updatedAt                DateTime              @updatedAt
+  photosProcessingStatus   MediaProcessingStatus @default(UPLOADING)
+  voiceProcessingStatus    MediaProcessingStatus @default(UPLOADING)
+  isInfluencer             Boolean               @default(false)
+  authProviders            AuthProvider[]
+  campaignsCreated         Campaign[]            @relation("CampaignCreator")
+  coinPurchases            CoinPurchase[]
+  compatibilityAsViewer    CompatibilityScore[]  @relation("CompatibilityViewer")
+  compatibilityAsCandidate CompatibilityScore[]  @relation("CompatibilityCandidate")
+  conversationsAsUserA     Conversation[]        @relation("ConversationUserA")
+  conversationsAsUserB     Conversation[]        @relation("ConversationUserB")
+  conversationUnlocks      ConversationUnlock[]
+  influencerEarnings       InfluencerEarning[]
+  influencerProfile        InfluencerProfile?
+  influencerReferrals      InfluencerReferral?
+  matchesAsUserA           Match[]               @relation("MatchUserA")
+  matchesAsUserB           Match[]               @relation("MatchUserB")
+  matchPreference          MatchPreference?
+  receivedMatchRequests    MatchRequest[]        @relation("ReceivedMatchRequests")
+  sentMatchRequests        MatchRequest[]        @relation("SentMatchRequests")
+  candidateMatchResults    MatchResult[]         @relation("CandidateMatchResults")
+  viewedMatchResults       MatchResult[]         @relation("ViewerMatchResults")
+  messages                 Message[]
+  onboardingMedia          OnboardingMedia[]
+  onboardingProgress       OnboardingProgress?
+  payouts                  Payout[]
+  profile                  Profile?
+  profilePhotos            ProfilePhoto[]
+  referralReceived         Referral?             @relation("ReferredUser")
+  referralsMade            Referral[]            @relation("Referrer")
+  referralCode             ReferralCode?
+  referralRewards          ReferralReward[]
+  refreshSessions          RefreshSession[]
+  blocksReceived           UserBlock[]           @relation("UserBlocksReceived")
+  blocksCreated            UserBlock[]           @relation("UserBlocksCreated")
+  voiceAnswers             VoiceAnswer[]
+  wallet                   Wallet?
+  walletTransactions       WalletTransaction[]
 }
 
 model Campaign {
@@ -591,50 +591,51 @@ model CoinPurchase {
 model MatchPreference {
   id                           String   @id @default(uuid())
   userId                       String   @unique
+  ageMin                       Int      @default(18)
+  ageMax                       Int      @default(99)
   preferredGenders             Gender[]
   locationPreference           String
   religionPreference           String
-  culturePreference            String
   childrenPreference           String
-  energyDescription            String
+  faithPractice                String
   communicationStyle           String
   tuesdayFeeling               String
-  energyMatchStyle             String
-  ambitionImportance           String
-  faithPractice                String
   socialLevel                  String
   lifestylePreference          String
   financialStabilityPreference String
   financialStagePreference     String
-  idealPartnerType             String
-  matchVoicePrompt             String
   minCompatibilityScore        Int      @default(50)
   createdAt                    DateTime @default(now())
   updatedAt                    DateTime @updatedAt
-  ageMax                       Int      @default(99)
-  ageMin                       Int      @default(18)
   user                         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model CompatibilityScore {
-  id             String        @id @default(uuid())
-  userAId        String
-  userBId        String
-  score          Int
-  lifestyleScore Int           @default(0)
-  valuesScore    Int           @default(0)
-  locationScore  Int           @default(0)
-  reasons        Json?
-  calculatedAt   DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  identityScore  Int           @default(0)
-  userA          User          @relation("CompatibilityUserA", fields: [userAId], references: [id], onDelete: Cascade)
-  userB          User          @relation("CompatibilityUserB", fields: [userBId], references: [id], onDelete: Cascade)
-  matchResults   MatchResult[]
+  id String @id @default(uuid())
 
-  @@unique([userAId, userBId])
-  @@index([userAId])
-  @@index([userBId])
+  viewerId    String
+  candidateId String
+
+  score Int
+
+  identityScore  Int @default(0)
+  lifestyleScore Int @default(0)
+  valuesScore    Int @default(0)
+  locationScore  Int @default(0)
+
+  reasons Json?
+
+  calculatedAt DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  viewer    User @relation("CompatibilityViewer", fields: [viewerId], references: [id], onDelete: Cascade)
+  candidate User @relation("CompatibilityCandidate", fields: [candidateId], references: [id], onDelete: Cascade)
+
+  matchResults MatchResult[]
+
+  @@unique([viewerId, candidateId])
+  @@index([viewerId])
+  @@index([candidateId])
   @@index([score])
 }
 
@@ -1022,7 +1023,7 @@ enum CoinPurchaseStatus {
 enum PaymentProvider {
   STRIPE
   PAYPAL
-}
+} 
 
 enum WalletTransactionReason {
   REQUEST_NEW_MATCHES

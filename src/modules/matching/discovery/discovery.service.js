@@ -95,13 +95,13 @@ const generateDiscoveryMatches = async (viewerId) => {
   // Score sequentially (or with limited concurrency) OUTSIDE any transaction
   const scoredCandidates = [];
   for (const candidate of candidates) {
-    const compatibilityScore =
-      await compatibilityScoreService.calculateAndUpsertCompatibilityScore({
-        viewerId,
-        candidate,
-        viewerPreference: preference,
-        viewerIdentity: viewerProfile?.identity ?? null,
-      });
+   const compatibilityScore =
+     await compatibilityScoreService.calculateAndUpsertCompatibilityScore({
+       viewerId,
+       candidate,
+       viewerPreference: preference,
+       viewerIdentity: viewerProfile?.identity ?? null,
+     });
     scoredCandidates.push({ candidate, compatibilityScore });
   }
 

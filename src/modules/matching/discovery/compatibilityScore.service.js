@@ -1,376 +1,570 @@
 import * as compatibilityScoreDb from "./compatibilityScore.db.js";
 
 // ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Sort two user IDs so the pair is always stored in the same direction
- * regardless of who triggered the calculation.
- */
-export const normalizePair = (userOneId, userTwoId) => {
-  return [userOneId, userTwoId].sort();
-};
-
-/**
- * Calculate age from birth date
- */
-const calculateAge = (birthDate) => {
-  if (!birthDate) return null;
-  const today = new Date();
-  const dob = new Date(birthDate);
-  let age = today.getFullYear() - dob.getFullYear();
-  const monthDiff = today.getMonth() - dob.getMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
-    age -= 1;
-  }
-  return age;
-};
-
-/**
- * Parse age range from min/max values
- */
-const parseAgeRange = (ageMin, ageMax) => {
-  return { min: ageMin ?? 18, max: ageMax ?? 99 };
-};
-
-// ---------------------------------------------------------------------------
-// Score Weights — must sum to 100
+// COMPATIBILITY CONFIGURATION
 // ---------------------------------------------------------------------------
 //
-//  Identity  (gender + age range)          0 – 30
-//  Values    (religion, children, intent)  0 – 30
-//  Lifestyle (drinking, smoking, social,
-//             fitness, money, relocation)  0 – 25
-//  Location  (city / country / anywhere)   0 – 15
+// Compatibility is directional:
 //
-// A candidate needs to clear the viewer's minCompatibilityScore (default 50)
-// before they're shown. For an 80% threshold a candidate must match well
-// across at least three of the four categories.
+//   viewer preferences + candidate profile
+//                         ↓
+//                   viewer → candidate
+//
+// A → B does NOT necessarily equal B → A.
+//
+// Total = 100
+//
+// Identity   = 25
+// Values     = 30
+// Lifestyle = 25
+// Location   = 20
+//
 // ---------------------------------------------------------------------------
 
 const WEIGHTS = {
-  identity: 30,
+  identity: 25,
   values: 30,
   lifestyle: 25,
-  location: 15,
+  location: 20,
+};
+
+const MAX_SCORE = 98;
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const normalize = (value) => {
+  if (value === null || value === undefined) return "";
+
+  return String(value).trim().toLowerCase();
+};
+
+const sameValue = (a, b) => {
+  const left = normalize(a);
+  const right = normalize(b);
+
+  return left !== "" && left === right;
+};
+
+const calculateAge = (birthDate) => {
+  if (!birthDate) return null;
+
+  const today = new Date();
+  const dob = new Date(birthDate);
+
+  let age = today.getFullYear() - dob.getFullYear();
+
+  const monthDiff = today.getMonth() - dob.getMonth();
+
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
+    age -= 1;
+  }
+
+  return age;
+};
+
+const isOpenPreference = (value) => {
+  const normalized = normalize(value);
+
+  return [
+    "",
+    "any",
+    "anyone",
+    "open",
+    "open to all",
+    "doesn't matter",
+    "does not matter",
+    "no preference",
+    "anywhere",
+  ].includes(normalized);
+};
+
+const addMatched = (reasons, message) => {
+  reasons.matched.push(message);
+};
+
+const addMissed = (reasons, message) => {
+  reasons.missed.push(message);
 };
 
 // ---------------------------------------------------------------------------
-// Identity Score  (0 – 30)
+// Identity — 25 points
+// ---------------------------------------------------------------------------
+//
+// Gender = 10
+// Age    = 15
+//
 // ---------------------------------------------------------------------------
 
-const scoreIdentity = (preference, identity, reasons) => {
-  if (!identity) return 0;
-
-  let score = 0;
-
-  // Gender match — hard gate, worth the most points
-  if (
-    preference.preferredGenders?.length > 0 &&
-    preference.preferredGenders.includes(identity.gender)
-  ) {
-    score += 20;
-    reasons.matched.push("Gender preference matched");
-  } else if (preference.preferredGenders?.length > 0) {
-    reasons.missed.push("Gender outside preference");
-    // Gender mismatch is disqualifying — caller filters by gender at DB level
+const scoreIdentity = (preference, candidateIdentity, reasons) => {
+  if (!candidateIdentity) {
+    addMissed(reasons, "Candidate identity profile unavailable");
     return 0;
   }
 
-  // Age range match
-  const candidateAge = calculateAge(identity.birthDate);
-  const { min, max } = parseAgeRange(preference.ageMin, preference.ageMax);
+  let score = 0;
 
-  if (candidateAge !== null) {
-    if (candidateAge >= min && candidateAge <= max) {
-      score += 10;
-      reasons.matched.push(`Age ${candidateAge} within ${min}–${max}`);
-    } else {
-      reasons.missed.push(`Age ${candidateAge} outside ${min}–${max}`);
-    }
+  // Gender ---------------------------------------------------------------
+
+  const preferredGenders = preference.preferredGenders ?? [];
+
+  if (preferredGenders.length === 0) {
+    score += 10;
+    addMatched(reasons, "No gender restriction");
+  } else if (preferredGenders.includes(candidateIdentity.gender)) {
+    score += 10;
+    addMatched(reasons, "Gender preference matched");
+  } else {
+    addMissed(reasons, "Gender outside preference");
+  }
+
+  // Age -----------------------------------------------------------------
+
+  const candidateAge = calculateAge(candidateIdentity.birthDate);
+
+  const ageMin = preference.ageMin ?? 18;
+  const ageMax = preference.ageMax ?? 99;
+
+  if (candidateAge === null) {
+    addMissed(reasons, "Candidate age unavailable");
+  } else if (candidateAge >= ageMin && candidateAge <= ageMax) {
+    score += 15;
+
+    addMatched(
+      reasons,
+      `Age ${candidateAge} within preferred range ${ageMin}–${ageMax}`,
+    );
+  } else {
+    addMissed(
+      reasons,
+      `Age ${candidateAge} outside preferred range ${ageMin}–${ageMax}`,
+    );
   }
 
   return Math.min(score, WEIGHTS.identity);
 };
 
 // ---------------------------------------------------------------------------
-// Values Score  (0 – 30)
+// Values — 30 points
+// ---------------------------------------------------------------------------
+//
+// Religion            = 8
+// Children            = 8
+// Communication       = 5
+// Tuesday feeling     = 4
+// Faith practice      = 5
+//
+// IMPORTANT:
+// faithPractice currently exists only on MatchPreference.
+// There is no corresponding candidate-side field in the profile schema
+// represented by the current service.
+//
+// Therefore faithPractice receives NO score until a candidate-side field
+// exists.
+//
+// To avoid manufacturing compatibility, the active score is:
+//
+// Religion          = 8
+// Children          = 8
+// Communication     = 5
+// Tuesday           = 4
 // ---------------------------------------------------------------------------
 
-const scoreValues = (preference, values, reasons) => {
-  if (!values) return 0;
+const scoreValues = (preference, candidateValues, reasons) => {
+  if (!candidateValues) {
+    addMissed(reasons, "Candidate values profile unavailable");
+    return 0;
+  }
 
   let score = 0;
 
-  // Religion
-  if (
-    preference.religionPreference &&
-    preference.religionPreference !== "Open to all"
+  // Religion ------------------------------------------------------------
+
+  if (isOpenPreference(preference.religionPreference)) {
+    score += 8;
+    addMatched(reasons, "Open regarding religion");
+  } else if (
+    sameValue(preference.religionPreference, candidateValues.religion)
   ) {
-    if (values.religion === preference.religionPreference) {
-      score += 12;
-      reasons.matched.push("Religion matched");
-    } else {
-      reasons.missed.push("Religion outside preference");
-    }
+    score += 8;
+    addMatched(reasons, "Religion preference matched");
   } else {
-    // Open to all — award partial credit for having any religion info
-    score += 6;
-    reasons.matched.push("Open to all religions");
+    addMissed(reasons, "Religion preference did not match");
   }
 
-  // Children preference
-  if (preference.childrenPreference) {
-    if (values.childrenPreference === preference.childrenPreference) {
-      score += 10;
-      reasons.matched.push("Children preference matched");
-    } else {
-      reasons.missed.push("Children preference mismatch");
-    }
+  // Children ------------------------------------------------------------
+
+  if (isOpenPreference(preference.childrenPreference)) {
+    score += 8;
+    addMatched(reasons, "Open regarding children");
+  } else if (
+    sameValue(preference.childrenPreference, candidateValues.childrenPreference)
+  ) {
+    score += 8;
+    addMatched(reasons, "Children preference matched");
+  } else {
+    addMissed(reasons, "Children preference did not match");
   }
 
-  // Communication style
-  if (preference.communicationStyle) {
-    if (values.personalCommStyle === preference.communicationStyle) {
-      score += 4;
-      reasons.matched.push("Communication style matched");
-    } else {
-      reasons.missed.push("Communication style differs");
-    }
+  // Communication -------------------------------------------------------
+
+  if (isOpenPreference(preference.communicationStyle)) {
+    score += 5;
+    addMatched(reasons, "Open regarding communication style");
+  } else if (
+    sameValue(preference.communicationStyle, candidateValues.personalCommStyle)
+  ) {
+    score += 5;
+    addMatched(reasons, "Communication style matched");
+  } else {
+    addMissed(reasons, "Communication style differs");
   }
 
-  // Tuesday vibe
-  if (preference.tuesdayFeeling) {
-    if (values.personalTuesdayVibe === preference.tuesdayFeeling) {
-      score += 4;
-      reasons.matched.push("Tuesday feeling matched");
-    }
+  // Tuesday feeling -----------------------------------------------------
+
+  if (isOpenPreference(preference.tuesdayFeeling)) {
+    score += 4;
+    addMatched(reasons, "Open regarding Tuesday feeling");
+  } else if (
+    sameValue(preference.tuesdayFeeling, candidateValues.personalTuesdayVibe)
+  ) {
+    score += 4;
+    addMatched(reasons, "Tuesday feeling matched");
+  } else {
+    addMissed(reasons, "Tuesday feeling differs");
   }
+
+  //
+  // faithPractice deliberately does not contribute here.
+  //
+  // The preference exists, but there is currently no candidate-side
+  // comparison field.
+  //
 
   return Math.min(score, WEIGHTS.values);
 };
 
 // ---------------------------------------------------------------------------
-// Lifestyle Score  (0 – 25)
+// Lifestyle — 25 points
+// ---------------------------------------------------------------------------
+//
+// Social level            = 5
+// Lifestyle preference    = 7
+// Financial stability     = 6
+// Financial stage         = 7
+//
 // ---------------------------------------------------------------------------
 
-const scoreLifestyle = (preference, lifestyle, reasons) => {
-  if (!lifestyle) return 0;
+const scoreLifestyle = (preference, candidateLifestyle, reasons) => {
+  if (!candidateLifestyle) {
+    addMissed(reasons, "Candidate lifestyle profile unavailable");
+    return 0;
+  }
 
   let score = 0;
 
-  // Lifestyle tolerance match (drinking/smoking)
-  if (preference.lifestylePreference) {
-    const toleranceMatch = (() => {
-      const pref = preference.lifestylePreference.toLowerCase();
-      if (pref === "any") return true;
-      if (
-        pref.includes("sober") &&
-        lifestyle.drinking === "Never" &&
-        lifestyle.smoking === "Never"
-      )
-        return true;
-      if (
-        pref.includes("social") &&
-        lifestyle.drinking !== "Regularly" &&
-        lifestyle.smoking === "Never"
-      )
-        return true;
-      return false;
-    })();
+  // Social level --------------------------------------------------------
 
-    if (toleranceMatch) {
-      score += 10;
-      reasons.matched.push("Lifestyle habits compatible");
-    } else {
-      reasons.missed.push("Lifestyle habits differ");
-    }
-  }
-
-  // Social level
-  if (preference.socialLevel) {
-    if (lifestyle.socialLife === preference.socialLevel) {
-      score += 5;
-      reasons.matched.push("Social level matched");
-    }
-  }
-
-  // Financial stage
-  if (preference.financialStagePreference) {
-    if (lifestyle.financialStatus === preference.financialStagePreference) {
-      score += 5;
-      reasons.matched.push("Financial stage matched");
-    }
-  }
-
-  // Relocation openness
-  if (preference.locationPreference === "Anywhere") {
-    if (
-      lifestyle.relocationFeelings === "Yes" ||
-      lifestyle.relocationFeelings === "Maybe"
-    ) {
-      score += 5;
-      reasons.matched.push("Open to relocation");
-    } else {
-      reasons.missed.push("Not open to relocation");
-    }
+  if (isOpenPreference(preference.socialLevel)) {
+    score += 5;
+    addMatched(reasons, "Open regarding social level");
+  } else if (sameValue(preference.socialLevel, candidateLifestyle.socialLife)) {
+    score += 5;
+    addMatched(reasons, "Social level matched");
   } else {
-    score += 5; // Not requiring relocation — no penalty
+    addMissed(reasons, "Social level differs");
+  }
+
+  // Lifestyle -----------------------------------------------------------
+
+  if (isOpenPreference(preference.lifestylePreference)) {
+    score += 7;
+    addMatched(reasons, "Open regarding lifestyle");
+  } else {
+    const preferenceValue = normalize(preference.lifestylePreference);
+
+    const drinking = normalize(candidateLifestyle.drinking);
+    const smoking = normalize(candidateLifestyle.smoking);
+
+    const drinkingMatch = drinking !== "" && preferenceValue.includes(drinking);
+
+    const smokingMatch = smoking !== "" && preferenceValue.includes(smoking);
+
+    if (drinkingMatch || smokingMatch) {
+      score += 7;
+      addMatched(reasons, "Lifestyle preference matched");
+    } else {
+      addMissed(reasons, "Lifestyle preference differs");
+    }
+  }
+
+  // Financial stability -------------------------------------------------
+
+  if (isOpenPreference(preference.financialStabilityPreference)) {
+    score += 6;
+    addMatched(reasons, "Open regarding financial stability");
+  } else if (
+    sameValue(
+      preference.financialStabilityPreference,
+      candidateLifestyle.moneyStyle,
+    )
+  ) {
+    score += 6;
+    addMatched(reasons, "Financial stability preference matched");
+  } else {
+    addMissed(reasons, "Financial stability preference differs");
+  }
+
+  // Financial stage -----------------------------------------------------
+
+  if (isOpenPreference(preference.financialStagePreference)) {
+    score += 7;
+    addMatched(reasons, "Open regarding financial stage");
+  } else if (
+    sameValue(
+      preference.financialStagePreference,
+      candidateLifestyle.financialStatus,
+    )
+  ) {
+    score += 7;
+    addMatched(reasons, "Financial stage preference matched");
+  } else {
+    addMissed(reasons, "Financial stage preference differs");
   }
 
   return Math.min(score, WEIGHTS.lifestyle);
 };
 
 // ---------------------------------------------------------------------------
-// Location Score  (0 – 15)
+// Location — 20 points
+// ---------------------------------------------------------------------------
+//
+// Same city     = 20
+// Same country  = 15
+// Anywhere      = 20
+//
 // ---------------------------------------------------------------------------
 
-// compatibilityScore.service.js - Update scoreLocation
-const scoreLocation = (preference, identity, viewerIdentity, reasons) => {
-  if (!identity) return 0;
+const scoreLocation = (
+  preference,
+  viewerIdentity,
+  candidateIdentity,
+  candidateLifestyle,
+  reasons,
+) => {
+  if (!candidateIdentity) {
+    addMissed(reasons, "Candidate location unavailable");
+    return 0;
+  }
 
-  const pref = preference.locationPreference;
+  const locationPreference = normalize(preference.locationPreference);
 
-  if (!pref || pref === "Anywhere") {
-    reasons.matched.push("Location: open to anywhere");
+  // Anywhere ------------------------------------------------------------
+
+  if (!locationPreference || locationPreference === "anywhere") {
+    addMatched(reasons, "Location preference is open");
     return WEIGHTS.location;
   }
 
-  // If we don't have viewer identity, give partial credit based on candidate data
   if (!viewerIdentity) {
-    if (pref === "Same city" && identity.residenceCity) {
-      reasons.matched.push("Candidate has city data (viewer unknown)");
-      return 8;
-    }
-    if (pref === "Same country" && identity.residenceCountry) {
-      reasons.matched.push("Candidate has country data (viewer unknown)");
-      return 6;
-    }
-    return 5;
+    addMissed(reasons, "Viewer location unavailable");
+    return 0;
   }
 
-  // Same city comparison
-  if (pref === "Same city") {
-    if (identity.residenceCity && viewerIdentity.residenceCity) {
-      if (identity.residenceCity === viewerIdentity.residenceCity) {
-        reasons.matched.push("Same city");
-        return WEIGHTS.location;
-      } else {
-        reasons.missed.push("Different city");
-        return 5;
-      }
+  // Same city -----------------------------------------------------------
+
+  if (locationPreference === "same city") {
+    const sameCity =
+      viewerIdentity.residenceCity &&
+      candidateIdentity.residenceCity &&
+      sameValue(viewerIdentity.residenceCity, candidateIdentity.residenceCity);
+
+    if (sameCity) {
+      addMatched(reasons, "Same city");
+      return 20;
     }
-    if (identity.residenceCity) {
-      reasons.matched.push("Candidate has city data");
+
+    const sameCountry =
+      viewerIdentity.residenceCountry &&
+      candidateIdentity.residenceCountry &&
+      sameValue(
+        viewerIdentity.residenceCountry,
+        candidateIdentity.residenceCountry,
+      );
+
+    if (sameCountry) {
+      addMatched(reasons, "Same country, different city");
       return 10;
     }
+
+    const relocation = normalize(candidateLifestyle?.relocationFeelings);
+
+    if (
+      relocation.includes("open") ||
+      relocation.includes("depends") ||
+      relocation.includes("maybe")
+    ) {
+      addMatched(reasons, "Different city but candidate is open to relocation");
+
+      return 7;
+    }
+
+    addMissed(reasons, "Different city");
+    return 3;
+  }
+
+  // Same country --------------------------------------------------------
+
+  if (locationPreference === "same country") {
+    const sameCountry =
+      viewerIdentity.residenceCountry &&
+      candidateIdentity.residenceCountry &&
+      sameValue(
+        viewerIdentity.residenceCountry,
+        candidateIdentity.residenceCountry,
+      );
+
+    if (sameCountry) {
+      addMatched(reasons, "Same country");
+      return 20;
+    }
+
+    const relocation = normalize(candidateLifestyle?.relocationFeelings);
+
+    if (
+      relocation.includes("open") ||
+      relocation.includes("depends") ||
+      relocation.includes("maybe")
+    ) {
+      addMatched(
+        reasons,
+        "Different country but candidate is open to relocation",
+      );
+
+      return 10;
+    }
+
+    addMissed(reasons, "Different country");
     return 5;
   }
 
-  // Same country comparison
-  if (pref === "Same country") {
-    if (identity.residenceCountry && viewerIdentity.residenceCountry) {
-      if (identity.residenceCountry === viewerIdentity.residenceCountry) {
-        reasons.matched.push("Same country");
-        return 12;
-      } else {
-        reasons.missed.push("Different country");
-        return 5;
-      }
-    }
-    if (identity.residenceCountry) {
-      reasons.matched.push("Candidate has country data");
-      return 8;
-    }
-    return 5;
-  }
+  // Unknown -------------------------------------------------------------
 
+  addMissed(reasons, "Unknown location preference");
   return 5;
 };
 
 // ---------------------------------------------------------------------------
-// Main Calculation
+// Main calculation
 // ---------------------------------------------------------------------------
 
-const calculateCompatibilityBreakdown = (
+export const calculateCompatibilityBreakdown = ({
   viewerPreference,
+  viewerProfile,
   candidate,
-  viewerIdentity,
-) => {
-  const profile = candidate.profile;
+}) => {
+  const candidateProfile = candidate?.profile;
 
-  if (!profile) {
+  if (!candidateProfile) {
     return {
       score: 0,
       identityScore: 0,
-      lifestyleScore: 0,
       valuesScore: 0,
+      lifestyleScore: 0,
       locationScore: 0,
-      reasons: { matched: [], missed: ["Candidate has no profile"] },
+
+      reasons: {
+        matched: [],
+        missed: ["Candidate has no profile"],
+      },
     };
   }
 
-  const { identity, lifestyle, values } = profile;
-  const reasons = { matched: [], missed: [] };
+  const candidateIdentity = candidateProfile.identity ?? null;
+  const candidateValues = candidateProfile.values ?? null;
+  const candidateLifestyle = candidateProfile.lifestyle ?? null;
 
-  const identityScore = scoreIdentity(viewerPreference, identity, reasons);
-  const valuesScore = scoreValues(viewerPreference, values, reasons);
-  const lifestyleScore = scoreLifestyle(viewerPreference, lifestyle, reasons);
-  const locationScore = scoreLocation(
+  const viewerIdentity = viewerProfile?.identity ?? null;
+
+  const reasons = {
+    matched: [],
+    missed: [],
+  };
+
+  const identityScore = scoreIdentity(
     viewerPreference,
-    identity,
-    viewerIdentity,
+    candidateIdentity,
     reasons,
   );
 
-  // Hard cap at 98 — a perfect stranger cannot be a 100% match
-  const score = Math.min(
-    identityScore + valuesScore + lifestyleScore + locationScore,
-    98,
+  const valuesScore = scoreValues(viewerPreference, candidateValues, reasons);
+
+  const lifestyleScore = scoreLifestyle(
+    viewerPreference,
+    candidateLifestyle,
+    reasons,
   );
+
+  const locationScore = scoreLocation(
+    viewerPreference,
+    viewerIdentity,
+    candidateIdentity,
+    candidateLifestyle,
+    reasons,
+  );
+
+  const rawScore = identityScore + valuesScore + lifestyleScore + locationScore;
+
+  const score = Math.min(rawScore, MAX_SCORE);
 
   return {
     score,
     identityScore,
-    lifestyleScore,
     valuesScore,
+    lifestyleScore,
     locationScore,
     reasons,
   };
 };
 
 // ---------------------------------------------------------------------------
-// Public API
+// Persisted calculation
 // ---------------------------------------------------------------------------
 
-/**
- * Calculate compatibility score between a viewer and a candidate,
- * then upsert the result to the database.
- */
 export const calculateAndUpsertCompatibilityScore = async ({
   viewerId,
   candidate,
   viewerPreference,
-  viewerIdentity = null, // Pass viewer's identity for location matching
+  viewerProfile = null,
+  viewerIdentity = null,
   trx = null,
 }) => {
-  const [userAId, userBId] = normalizePair(viewerId, candidate.id);
-
-  const breakdown = calculateCompatibilityBreakdown(
+  const breakdown = calculateCompatibilityBreakdown({
     viewerPreference,
+    viewerProfile:
+      viewerProfile ??
+      (viewerIdentity
+        ? {
+            identity: viewerIdentity,
+          }
+        : null),
     candidate,
-    viewerIdentity,
-  );
+  });
 
   return compatibilityScoreDb.upsertByUserPair(
     {
-      userAId,
-      userBId,
+      // Direction matters.
+      //
+      // viewerId -> candidate.id
+      //
+      userAId: viewerId,
+      userBId: candidate.id,
+
       score: breakdown.score,
       identityScore: breakdown.identityScore,
-      lifestyleScore: breakdown.lifestyleScore,
       valuesScore: breakdown.valuesScore,
+      lifestyleScore: breakdown.lifestyleScore,
       locationScore: breakdown.locationScore,
       reasons: breakdown.reasons,
     },
@@ -378,58 +572,68 @@ export const calculateAndUpsertCompatibilityScore = async ({
   );
 };
 
-/**
- * Calculate compatibility score between two users without persisting
- * (useful for real-time matching or previews).
- */
+// ---------------------------------------------------------------------------
+// Non-persisted calculation
+// ---------------------------------------------------------------------------
+
 export const calculateCompatibilityScore = ({
   viewerPreference,
-  candidate,
+  viewerProfile = null,
   viewerIdentity = null,
+  candidate,
 }) => {
-  return calculateCompatibilityBreakdown(
+  return calculateCompatibilityBreakdown({
     viewerPreference,
+    viewerProfile:
+      viewerProfile ??
+      (viewerIdentity
+        ? {
+            identity: viewerIdentity,
+          }
+        : null),
     candidate,
-    viewerIdentity,
-  );
+  });
 };
 
-/**
- * Get compatibility score between two users from the database.
- */
+// ---------------------------------------------------------------------------
+// Database lookup
+// ---------------------------------------------------------------------------
+
 export const getCompatibilityScore = async ({
   userAId,
   userBId,
   trx = null,
 }) => {
-  const [idA, idB] = normalizePair(userAId, userBId);
   return compatibilityScoreDb.findByUserPair({
-    userAId: idA,
-    userBId: idB,
+    userAId,
+    userBId,
     trx,
   });
 };
 
-/**
- * Check if a candidate meets the minimum compatibility threshold.
- */
+// ---------------------------------------------------------------------------
+// Threshold
+// ---------------------------------------------------------------------------
+
 export const meetsMinimumThreshold = (score, minThreshold = 50) => {
   return score >= minThreshold;
 };
 
-/**
- * Get compatibility category based on score.
- */
+// ---------------------------------------------------------------------------
+// Category
+// ---------------------------------------------------------------------------
+
 export const getCompatibilityCategory = (score) => {
   if (score >= 80) return "EXCELLENT";
   if (score >= 65) return "GOOD";
   if (score >= 50) return "FAIR";
   if (score >= 35) return "LOW";
+
   return "POOR";
 };
 
 export default {
-  normalizePair,
+  calculateCompatibilityBreakdown,
   calculateAndUpsertCompatibilityScore,
   calculateCompatibilityScore,
   getCompatibilityScore,

@@ -1,24 +1,27 @@
 import prisma from "../../../config/prisma.js";
 
-const dbClient = (trx) => trx || prisma;
+const dbClient = (trx = null) => trx || prisma;
 
-export const findByUserPair = async ({ userAId, userBId, trx = null }) => {
+export const findByViewerCandidate = async (
+  { viewerId, candidateId },
+  trx = null,
+) => {
   const db = dbClient(trx);
 
   return db.compatibilityScore.findUnique({
     where: {
-      userAId_userBId: {
-        userAId,
-        userBId,
+      viewerId_candidateId: {
+        viewerId,
+        candidateId,
       },
     },
   });
 };
 
-export const upsertByUserPair = async (
+export const upsertByViewerCandidate = async (
   {
-    userAId,
-    userBId,
+    viewerId,
+    candidateId,
     score,
     identityScore = 0,
     lifestyleScore = 0,
@@ -32,9 +35,9 @@ export const upsertByUserPair = async (
 
   return db.compatibilityScore.upsert({
     where: {
-      userAId_userBId: {
-        userAId,
-        userBId,
+      viewerId_candidateId: {
+        viewerId,
+        candidateId,
       },
     },
 
@@ -49,8 +52,8 @@ export const upsertByUserPair = async (
     },
 
     create: {
-      userAId,
-      userBId,
+      viewerId,
+      candidateId,
       score,
       identityScore,
       lifestyleScore,

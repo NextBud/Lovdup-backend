@@ -112,81 +112,204 @@ export const saveDraft = saveProgress;
 // ─────────────────────────────────────────────
 
 export const completeOnboarding = async (userId, payload) => {
+  console.log("\n========================================");
+  console.log("🚀 COMPLETE ONBOARDING START");
+  console.log("User ID:", userId);
+  console.log("========================================\n");
+
   // 1. Validate payload
+  console.log("1️⃣ Validating onboarding payload...");
+
   const { error, value } = completeOnboardingSchema.validate(payload, {
     abortEarly: false,
     stripUnknown: true,
   });
 
   if (error) {
-    throw new BadRequestError(error.details.map((d) => d.message).join(", "));
+    console.error("❌ Payload validation failed:");
+    console.error(error.details);
+
+    throw new BadRequestError(
+      error.details.map((d) => d.message).join(", "),
+    );
   }
 
-  // 2. Transaction — atomic writes and race-condition guard
+  console.log("✅ Payload validation passed");
+
+  // 2. Transaction
+  console.log("\n🔵 Starting Prisma transaction...");
+
+  const transactionStartedAt = Date.now();
+
   const result = await prisma.$transaction(
     async (tx) => {
-      // 2a. Guard against concurrent retries/double-clicks INSIDE the transaction.
-      // This ensures we see the most up-to-date committed state, preventing race conditions.
+      console.log("\n----------------------------------------");
+      console.log("🔵 TRANSACTION ENTERED");
+      console.log("----------------------------------------");
+
+      // --------------------------------------------------
+      // 2a. Find onboarding progress
+      // --------------------------------------------------
+
+      console.log("\n2️⃣ Fetching onboarding progress...");
+
       const progress = await tx.onboardingProgress.findUnique({
         where: { userId },
       });
 
+      console.log("✅ Progress query completed");
+
       if (!progress) {
+        console.error("❌ No onboarding progress found");
+
         throw new NotFoundException(
           "No onboarding session found. Start from step 1.",
         );
       }
 
+      console.log("Progress status:", progress.status);
+      console.log("Progress currentStep:", progress.currentStep);
+
       if (progress.status === ONBOARDING_STATUS.COMPLETED) {
-        // Already completed (e.g., concurrent request or previous success with network drop)
+        console.log("⚠️ Onboarding already completed");
+
         const existingProfile = await tx.profile.findUnique({
           where: { userId },
           select: { id: true },
         });
-        return { profileId: existingProfile?.id, alreadyCompleted: true };
+
+        console.log(
+          "Existing profile:",
+          existingProfile?.id ?? "NOT FOUND",
+        );
+
+        return {
+          profileId: existingProfile?.id,
+          alreadyCompleted: true,
+        };
       }
 
-      const stagedMedia = await onboardingDb.findOnboardingMediaByUserId(
-        userId,
-        tx,
+      // --------------------------------------------------
+      // 2b. Find staged media
+      // --------------------------------------------------
+
+      console.log("\n3️⃣ Fetching staged onboarding media...");
+
+      const stagedMedia =
+        await onboardingDb.findOnboardingMediaByUserId(userId, tx);
+
+      console.log(
+        `✅ Found ${stagedMedia.length} staged media records`,
       );
+
       const stagedPhotos = stagedMedia
         .filter((m) => m.mediaType === "image")
         .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
 
+      console.log(`📸 Staged photos: ${stagedPhotos.length}`);
+
       if (stagedPhotos.length < 2) {
+        console.error("❌ Not enough photos");
+
         throw new BadRequestError("At least 2 photos are required.");
       }
 
-      const { identity, lifestyle, values, narrative } =
-        extractProfilePayloads(value);
+      // --------------------------------------------------
+      // Extract profile payload
+      // --------------------------------------------------
 
-      // 2b. Use upsert to ensure idempotency if a partial failure somehow left a Profile row
+      console.log("\n4️⃣ Extracting profile payloads...");
+
+      const {
+        identity,
+        lifestyle,
+        values,
+        narrative,
+      } = extractProfilePayloads(value);
+
+      console.log("✅ Profile payloads extracted");
+
+      // --------------------------------------------------
+      // 2c. Profile upsert
+      // --------------------------------------------------
+
+      console.log(
+  `[${new Date().toISOString()}] 5️⃣ Upserting profile...`,
+);
+
       const profile = await tx.profile.upsert({
         where: { userId },
         update: {
           onboardingCompleted: true,
           completedAt: new Date(),
-          identity: { upsert: { create: identity, update: identity } },
-          lifestyle: { upsert: { create: lifestyle, update: lifestyle } },
-          values: { upsert: { create: values, update: values } },
-          narrative: { upsert: { create: narrative, update: narrative } },
+          identity: {
+            upsert: {
+              create: identity,
+              update: identity,
+            },
+          },
+          lifestyle: {
+            upsert: {
+              create: lifestyle,
+              update: lifestyle,
+            },
+          },
+          values: {
+            upsert: {
+              create: values,
+              update: values,
+            },
+          },
+          narrative: {
+            upsert: {
+              create: narrative,
+              update: narrative,
+            },
+          },
         },
         create: {
           userId,
           onboardingCompleted: true,
           completedAt: new Date(),
-          identity: { create: identity },
-          lifestyle: { create: lifestyle },
-          values: { create: values },
-          narrative: { create: narrative },
+          identity: {
+            create: identity,
+          },
+          lifestyle: {
+            create: lifestyle,
+          },
+          values: {
+            create: values,
+          },
+          narrative: {
+            create: narrative,
+          },
         },
       });
 
-      // 2c. Promote staged photos → ProfilePhoto
-      await tx.profilePhoto.deleteMany({
-        where: { profileId: profile.id },
+      console.log("✅ Profile upsert completed");
+      console.log("Profile ID:", profile.id);
+
+      // --------------------------------------------------
+      // Delete existing profile photos
+      // --------------------------------------------------
+
+      console.log("\n6️⃣ Deleting existing profile photos...");
+
+      const deletedPhotos = await tx.profilePhoto.deleteMany({
+        where: {
+          profileId: profile.id,
+        },
       });
+
+      console.log(
+        `✅ Deleted ${deletedPhotos.count} existing profile photos`,
+      );
+
+      // --------------------------------------------------
+      // Create profile photos
+      // --------------------------------------------------
+
+      console.log("\n7️⃣ Creating profile photos...");
 
       await tx.profilePhoto.createMany({
         data: stagedPhotos.map((photo, index) => ({
@@ -201,14 +324,33 @@ export const completeOnboarding = async (userId, payload) => {
         })),
       });
 
-      // 1. Ensure wallet exists
+      console.log("✅ Profile photos created");
+
+      // --------------------------------------------------
+      // Wallet
+      // --------------------------------------------------
+
+      console.log("\n8️⃣ Upserting wallet...");
+
       const wallet = await tx.wallet.upsert({
         where: { userId },
         update: {},
-        create: { userId, balance: 0 },
+        create: {
+          userId,
+          balance: 0,
+        },
       });
 
-      // 2. Apply the 15-coin Welcome Bonus
+      console.log("✅ Wallet upsert completed");
+      console.log("Wallet ID:", wallet.id);
+      console.log("Wallet balance:", wallet.balance);
+
+      // --------------------------------------------------
+      // Welcome bonus
+      // --------------------------------------------------
+
+      console.log("\n9️⃣ Creating welcome bonus transaction...");
+
       const balanceBefore = wallet.balance;
       const bonusAmount = 15;
       const balanceAfter = balanceBefore + bonusAmount;
@@ -224,59 +366,142 @@ export const completeOnboarding = async (userId, payload) => {
           referenceId: null,
           balanceBefore,
           balanceAfter,
-          metadata: { welcome: true },
+          metadata: {
+            welcome: true,
+          },
         },
       });
 
-      // 3. Update the wallet balance
+      console.log("✅ Welcome bonus transaction created");
+      console.log(`Balance: ${balanceBefore} → ${balanceAfter}`);
+
+      // --------------------------------------------------
+      // Update wallet balance
+      // --------------------------------------------------
+
+      console.log("\n🔟 Updating wallet balance...");
+
       await tx.wallet.update({
-        where: { userId },
-        data: { balance: balanceAfter },
+        where: {
+          userId,
+        },
+        data: {
+          balance: balanceAfter,
+        },
       });
 
-      // Clean up staged media
-      await onboardingDb.deleteOnboardingMediaByUserId(userId, tx);
+      console.log("✅ Wallet balance updated");
 
-      // Mark complete
-      await onboardingDb.markCompleted(userId, tx);
+      // --------------------------------------------------
+      // Delete staged media
+      // --------------------------------------------------
 
-      return { profileId: profile.id, alreadyCompleted: false };
+      console.log("\n1️⃣1️⃣ Deleting staged onboarding media...");
+
+      const deletedMedia =
+        await onboardingDb.deleteOnboardingMediaByUserId(
+          userId,
+          tx,
+        );
+
+      console.log(
+        `✅ Deleted ${deletedMedia.count} staged media records`,
+      );
+
+      // --------------------------------------------------
+      // Mark onboarding complete
+      // --------------------------------------------------
+
+      console.log("\n1️⃣2️⃣ Marking onboarding as COMPLETED...");
+
+      console.log("Transaction client exists:", !!tx);
+      console.log("Calling onboardingDb.markCompleted()...");
+
+      const completedProgress =
+        await onboardingDb.markCompleted(userId, tx);
+
+      console.log("✅ Onboarding progress marked COMPLETED");
+      console.log(
+        "Completed progress ID:",
+        completedProgress.id,
+      );
+
+      // --------------------------------------------------
+      // Transaction result
+      // --------------------------------------------------
+
+      console.log("\n🎯 TRANSACTION CALLBACK COMPLETED");
+      console.log("Returning transaction result...");
+
+      return {
+        profileId: profile.id,
+        alreadyCompleted: false,
+      };
     },
     {
-      timeout: 15000, // headroom for the multi-write sequence
+      timeout: 15000,
       maxWait: 5000,
     },
   );
 
-  // 3. If it was already completed, return early gracefully without re-emitting events
+  const transactionDuration = Date.now() - transactionStartedAt;
+
+  console.log("\n========================================");
+  console.log("✅ TRANSACTION COMMITTED");
+  console.log("Duration:", `${transactionDuration}ms`);
+  console.log("Result:", result);
+  console.log("========================================\n");
+
+  // --------------------------------------------------
+  // Already completed
+  // --------------------------------------------------
+
   if (result.alreadyCompleted) {
+    console.log("ℹ️ Onboarding was already completed");
+
     return {
       profileId: result.profileId,
       message: "Onboarding already completed.",
     };
   }
 
-  // ─────────────────────────────────────────────
-  // CREATE REFERRAL CODE FOR THE USER
-  // ─────────────────────────────────────────────
+  // --------------------------------------------------
+  // Referral code
+  // --------------------------------------------------
+
+  console.log("\n1️⃣3️⃣ Creating/fetching referral code...");
+
   let referralCode;
+
   try {
     const existingCode = await prisma.referralCode.findUnique({
       where: { userId },
     });
 
     if (!existingCode) {
+      console.log("No referral code found. Creating one...");
+
       referralCode = await createReferralCode(userId);
+
+      console.log("✅ Referral code created");
     } else {
+      console.log("✅ Existing referral code found");
+
       referralCode = existingCode;
     }
   } catch (error) {
-    console.error(`Failed to create referral code for user ${userId}:`, error);
+    console.error(
+      `❌ Failed to create referral code for user ${userId}:`,
+      error,
+    );
   }
 
-  // ─────────────────────────────────────────────
-  // EMIT USER ONBOARDING COMPLETED EVENT
-  // ─────────────────────────────────────────────
+  // --------------------------------------------------
+  // Event
+  // --------------------------------------------------
+
+  console.log("\n1️⃣4️⃣ Emitting onboarding completed event...");
+
   emitUserOnboardingCompleted({
     userId,
     profileId: result.profileId,
@@ -284,12 +509,19 @@ export const completeOnboarding = async (userId, payload) => {
     timestamp: new Date(),
   });
 
+  console.log("✅ Event emitted");
+
+  console.log("\n========================================");
+  console.log("🎉 COMPLETE ONBOARDING FINISHED");
+  console.log("========================================\n");
+
   return {
     profileId: result.profileId,
     referralCode: referralCode?.code,
     message: "Welcome to LovdUp.",
   };
 };
+
 // ─────────────────────────────────────────────
 // RESET
 // ─────────────────────────────────────────────

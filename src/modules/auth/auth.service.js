@@ -67,8 +67,10 @@ export const authenticateWithEmail = async ({
   password,
   meta,
 }) => {
+  const normalizedEmail = email.trim().toLowerCase();
+
   // 1. Find existing user
-  let user = await authDb.findUserByEmail(email);
+  let user = await authDb.findUserByEmail(normalizedEmail);
 
   // 2. Existing user
   if (user) {
@@ -97,7 +99,7 @@ export const authenticateWithEmail = async ({
     user = await prisma.$transaction(async (tx) => {
       return authDb.createLocalUserWithOnboarding(
         {
-          email,
+          email: normalizedEmail,
           passwordHash,
         },
         tx,
@@ -124,84 +126,11 @@ export const authenticateWithEmail = async ({
     }),
   );
 
-  // 7. Return the exact same auth response
+  // 7. Return the same auth response
   return buildAuthResponse({
     user,
     tokens,
   });
-};
-
-// ─────────────────────────────────────────────
-// PHONE AUTH
-// ─────────────────────────────────────────────
-
-export const authenticateWithPhone = async ({ idToken, meta }) => {
-  if (!idToken) {
-    throw new BadRequestError("Firebase ID token is required.");
-  }
-
-  // 1. Verify Firebase token
-  let decoded;
-  try {
-    decoded = await firebaseAuth.verifyIdToken(idToken);
-  } catch {
-    throw new UnauthorizedException(
-      "Phone verification token is invalid or expired.",
-    );
-  }
-
-  const { uid, phone_number: phone, email, email_verified } = decoded;
-
-  if (!uid) throw new UnauthorizedException("Invalid Firebase identity.");
-  if (!phone)
-    throw new UnauthorizedException("A verified phone number is required.");
-
-  // 2. Find existing user by phone
-  let user = await authDb.findUserByPhone(phone);
-
-  // 3. Existing user
-  if (user) {
-    // Link Firebase identity
-    await authDb.upsertAuthProvider(user.id, uid);
-
-    // Update email if Firebase provides one and it's different
-    if (email && email !== user.email) {
-      user = await authDb.updateUserEmail(user.id, email, !!email_verified);
-    } else if (email_verified && !user.emailVerified) {
-      user = await authDb.updateUserEmailVerified(user.id, true);
-    }
-  }
-
-  // 4. New user
-  if (!user) {
-    user = await prisma.$transaction(async (tx) => {
-      return await authDb.createUserWithOnboarding(
-        {
-          phone,
-          email,
-          emailVerified: !!email_verified,
-        },
-        uid,
-        tx,
-      );
-    });
-  }
-
-  // 5. Account status
-  if (user.status !== "ACTIVE") {
-    throw new UnauthorizedException("This account is not active.");
-  }
-
-  // 6. Update last login
-  await authDb.updateLastLogin(user.id);
-
-  // 7. Create session
-  const tokens = await prisma.$transaction(async (tx) =>
-    createSession({ user, tx, meta }),
-  );
-
-  // 8. Return auth response
-  return buildAuthResponse({ user, tokens });
 };
 
 // ─────────────────────────────────────────────

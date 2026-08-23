@@ -2,8 +2,22 @@ import prisma from "../../../config/prisma.js";
 
 const dbClient = (trx = null) => trx || prisma;
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
 /**
- * Compute birth-date boundaries for the requested age range.
+ * Compute birth-date boundaries for an age range.
+ *
+ * Example:
+ * ageMin = 25
+ * ageMax = 35
+ *
+ * Candidate DOB must fall between:
+ *
+ * today - 35 years
+ * and
+ * today - 25 years
  */
 const birthDateBoundsFromAgeRange = (ageMin, ageMax) => {
   const today = new Date();
@@ -20,14 +34,30 @@ const birthDateBoundsFromAgeRange = (ageMin, ageMax) => {
   };
 };
 
+// ---------------------------------------------------------------------------
+// Discovery candidates
+// ---------------------------------------------------------------------------
+
 /**
- * Pull candidates for discovery matching.
+ * Pull candidates that are eligible for discovery.
+ *
+ * Discovery DB responsibilities:
+ *
+ * 1. Exclude the viewer.
+ * 2. Exclude inactive/suspended/deleted users.
+ * 3. Require completed profiles.
+ * 4. Apply preferred gender.
+ * 5. Apply preferred age range.
+ * 6. Exclude blocked users in either direction.
+ * 7. Load only profile data required by compatibility scoring/display.
+ *
+ * Compatibility scoring itself remains in compatibilityScore.service.js.
  */
 export const findDiscoveryCandidates = async ({
   viewerId,
-  preferredGenders,
-  ageMin,
-  ageMax,
+  preferredGenders = [],
+  ageMin = 18,
+  ageMax = 99,
   limit,
   trx = null,
 }) => {
@@ -38,20 +68,89 @@ export const findDiscoveryCandidates = async ({
     ageMax,
   );
 
+  const genderFilter =
+    preferredGenders.length > 0
+      ? {
+          in: preferredGenders,
+        }
+      : undefined;
+
   return db.user.findMany({
     where: {
+      // ---------------------------------------------------------------
+      // Never return the viewer themselves.
+      // ---------------------------------------------------------------
+
       id: {
         not: viewerId,
       },
 
-      // Add the rest of your filters here.
-      // They all execute through `db`, therefore through `trx`
-      // when this function is called inside a transaction.
+      // ---------------------------------------------------------------
+      // Account eligibility.
+      // ---------------------------------------------------------------
+
+      isActive: true,
+      isSuspended: false,
+      deletedAt: null,
+
+      status: "ACTIVE",
+
+      // ---------------------------------------------------------------
+      // Block filtering.
+      //
+      // Exclude:
+      //
+      // viewer -> candidate
+      // candidate -> viewer
+      //
+      // Both directions matter.
+      // ---------------------------------------------------------------
+
+      AND: [
+        {
+          NOT: {
+            blocksCreated: {
+              some: {
+                blockedId: viewerId,
+              },
+            },
+          },
+        },
+        {
+          NOT: {
+            blocksReceived: {
+              some: {
+                blockerId: viewerId,
+              },
+            },
+          },
+        },
+      ],
+
+      // ---------------------------------------------------------------
+      // Candidate profile requirements.
+      // ---------------------------------------------------------------
 
       profile: {
         is: {
+          onboardingCompleted: true,
+
           identity: {
             is: {
+              // ---------------------------------------------------------
+              // Gender
+              // ---------------------------------------------------------
+
+              ...(genderFilter
+                ? {
+                    gender: genderFilter,
+                  }
+                : {}),
+
+              // ---------------------------------------------------------
+              // Age
+              // ---------------------------------------------------------
+
               birthDate: {
                 gte: oldestBirthDate,
                 lte: youngestBirthDate,
@@ -63,6 +162,10 @@ export const findDiscoveryCandidates = async ({
     },
 
     include: {
+      // -----------------------------------------------------------------
+      // Candidate profile
+      // -----------------------------------------------------------------
+
       profile: {
         include: {
           identity: true,
@@ -72,31 +175,32 @@ export const findDiscoveryCandidates = async ({
         },
       },
 
+      // -----------------------------------------------------------------
+      // Photos
+      // -----------------------------------------------------------------
+
       profilePhotos: {
         where: {
           status: "ACTIVE",
         },
+
         orderBy: {
           position: "asc",
         },
       },
+    },
 
-      voiceAnswers: {
-        where: {
-          status: "ACTIVE",
-        },
-        orderBy: {
-          createdAt: "asc",
-        },
-        include: {
-          voicePrompt: true,
-        },
-      },
+    orderBy: {
+      lastActiveAt: "desc",
     },
 
     take: limit,
   });
 };
+
+// ---------------------------------------------------------------------------
+// Match results
+// ---------------------------------------------------------------------------
 
 export const createManyMatchResults = async (payload, trx = null) => {
   const db = dbClient(trx);
@@ -134,20 +238,9 @@ export const findViewerMatchResults = async ({
             where: {
               status: "ACTIVE",
             },
+
             orderBy: {
               position: "asc",
-            },
-          },
-
-          voiceAnswers: {
-            where: {
-              status: "ACTIVE",
-            },
-            orderBy: {
-              createdAt: "asc",
-            },
-            include: {
-              voicePrompt: true,
             },
           },
         },
