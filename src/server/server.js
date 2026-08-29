@@ -6,6 +6,7 @@ import profileRouter from "../modules/profiles/profileRouter.js";
 import matchRouter from "../modules/matching/match/matchRoutes.js";
 import matchRequestRouter from "../modules/matching/matchRequest/matchRequestRoutes.js";
 import matchPreferenceRouter from "../modules/matching/matchPreference/matchPreference.routes.js";
+import notificationRouter from "../modules/notifications/notification.routes.js"
 import conversationRouter from "../modules/converstaions/conversation.routes.js";
 import packageRouter from "../modules/finance/coin-packages/coinPackage.routes.js";
 import purchaseRouter from "../modules/finance/purchases/purchase.routes.js";
@@ -38,6 +39,7 @@ app.use("/api/v1/match-requests", matchRequestRouter); // working
 app.use("/api/v1/conversations", conversationRouter);
 app.use("/api/v1/match-preferences", matchPreferenceRouter);
 app.use("/api/v1/discovery", discoveryRouter)
+app.use("/api/v1/notifications", notificationRouter);
 app.use("/api/v1/coin-packages", packageRouter);
 app.use("/api/v1/purchase", purchaseRouter);
 app.use("/api/v1/payment", paymentRouter);

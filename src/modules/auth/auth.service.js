@@ -1,10 +1,10 @@
 import prisma from "../../config/prisma.js";
 import * as authDb from "./authDbService.js";
-import * as userDb from "../../services/user/userDbService.js";
 import { firebaseAuth } from "../../config/firebaseAdmin.js";
 import bcrypt from "bcryptjs";
 import { signAccessToken } from "../../lib/token.js";
 import { generateRefreshToken, hashToken } from "../../lib/sessionTokens.js";
+import { normalizePhoneNumber } from "../../utils/phone.util.js";
 import {
   UnauthorizedException,
   BadRequestError,
@@ -56,6 +56,136 @@ const buildAuthResponse = async ({ user, tokens }) => {
     onboardingStatus: onboarding?.status ?? ONBOARDING_STATUS.NOT_STARTED,
     ...tokens,
   };
+};
+
+// ─────────────────────────────────────────────
+// PHONE AUTH
+// ─────────────────────────────────────────────
+
+export const authenticateWithPhone = async ({
+  idToken,
+  meta,
+}) => {
+  if (!idToken) {
+    throw new BadRequestError(
+      "Firebase ID token is required.",
+    );
+  }
+
+  // 1. Verify Firebase token
+  let decodedToken;
+
+  try {
+    decodedToken = await firebaseAuth.verifyIdToken(idToken);
+  } catch {
+    throw new UnauthorizedException(
+      "Invalid or expired phone authentication token.",
+    );
+  }
+
+  const firebaseUid = decodedToken.uid;
+  const firebasePhone = decodedToken.phone_number;
+
+  if (!firebaseUid || !firebasePhone) {
+    throw new UnauthorizedException(
+      "Invalid Firebase phone authentication.",
+    );
+  }
+
+  // 2. Normalize Firebase phone number to E.164
+  const normalizedPhone =
+    normalizePhoneNumber(firebasePhone);
+
+  if (!normalizedPhone) {
+    throw new BadRequestError(
+      "The authenticated phone number is invalid.",
+    );
+  }
+
+  // 3. Resolve the LovdUp user
+  const user = await prisma.$transaction(async (tx) => {
+    // First: does this Firebase identity already exist?
+    const existingProvider =
+      await authDb.findAuthProvider(
+        "FIREBASE",
+        firebaseUid,
+        tx,
+      );
+
+    if (existingProvider) {
+      return existingProvider.user;
+    }
+
+    // Second: does this phone already belong to a user?
+    let existingUser = await authDb.findUserByPhone(
+      normalizedPhone,
+      tx,
+    );
+
+    // Third: create a new user if necessary
+    if (!existingUser) {
+      existingUser =
+        await authDb.createPhoneUserWithOnboarding(
+          {
+            phone: normalizedPhone,
+            providerUid: firebaseUid,
+          },
+          tx,
+        );
+
+      return existingUser;
+    }
+
+    // Existing phone user but Firebase provider isn't linked yet.
+    await authDb.createAuthProvider(
+      {
+        userId: existingUser.id,
+        provider: "FIREBASE",
+        providerUid: firebaseUid,
+      },
+      tx,
+    );
+
+    // Make sure the phone is marked verified.
+    if (
+      existingUser.phone !== normalizedPhone ||
+      !existingUser.phoneVerified ||
+      !existingUser.verified
+    ) {
+      existingUser = await authDb.updateUserPhone(
+        existingUser.id,
+        normalizedPhone,
+        tx,
+      );
+    }
+
+    return existingUser;
+  });
+
+  // 4. Account status
+  if (user.status !== "ACTIVE") {
+    throw new UnauthorizedException(
+      "This account is not active.",
+    );
+  }
+
+  // 5. Update last login
+  await authDb.updateLastLogin(user.id);
+
+  // 6. Create LovdUp session
+  const tokens = await prisma.$transaction(async (tx) =>
+    createSession({
+      user,
+      tx,
+      meta,
+    }),
+  );
+
+  // 7. Same response shape as email authentication
+  return buildAuthResponse({
+    user,
+    tokens,
+  });
 };
 
 // ─────────────────────────────────────────────

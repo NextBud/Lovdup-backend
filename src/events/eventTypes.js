@@ -4,6 +4,7 @@ export const EVENT_TYPES = {
   // ---------------------------------------------------------------------------
 
   MATCH_REQUEST_SENT: "MATCH_REQUEST_SENT",
+  MATCH_REQUEST_ACCEPTED: "MATCH_REQUEST_ACCEPTED",
   MATCH_CREATED: "MATCH_CREATED",
 
   // ---------------------------------------------------------------------------
@@ -11,13 +12,9 @@ export const EVENT_TYPES = {
   // ---------------------------------------------------------------------------
 
   REFERRAL_CLICKED: "REFERRAL_CLICKED",
-
   REFERRAL_CREATED: "REFERRAL_CREATED",
-
   REFERRAL_QUALIFIED: "REFERRAL_QUALIFIED",
-
   REFERRAL_REJECTED: "REFERRAL_REJECTED",
-
   REFERRAL_REWARDED: "REFERRAL_REWARDED",
 
   // ---------------------------------------------------------------------------
@@ -25,9 +22,7 @@ export const EVENT_TYPES = {
   // ---------------------------------------------------------------------------
 
   INFLUENCER_CREATED: "INFLUENCER_CREATED",
-
   PAYOUT_CREATED: "PAYOUT_CREATED",
-
   PAYOUT_COMPLETED: "PAYOUT_COMPLETED",
 
   // ---------------------------------------------------------------------------
@@ -35,7 +30,6 @@ export const EVENT_TYPES = {
   // ---------------------------------------------------------------------------
 
   COINS_AWARDED: "COINS_AWARDED",
-
   COIN_PURCHASE_COMPLETED: "COIN_PURCHASE_COMPLETED",
 
   // ---------------------------------------------------------------------------
@@ -49,12 +43,8 @@ export const EVENT_TYPES = {
   // ---------------------------------------------------------------------------
 
   MESSAGE_SENT: "MESSAGE_SENT",
-
   STAGE_UNLOCK_PAID: "STAGE_UNLOCK_PAID",
-
   STAGE_UNLOCKED: "STAGE_UNLOCKED",
-
   CONVERSATION_READ: "CONVERSATION_READ",
-
   CONVERSATION_BLOCKED: "CONVERSATION_BLOCKED",
 };

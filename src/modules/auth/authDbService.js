@@ -255,3 +255,74 @@ export const createLocalUserWithOnboarding = async (
     },
   });
 };
+
+export const findAuthProvider = async (provider, providerUid, tx = null) => {
+  return db(tx).authProvider.findUnique({
+    where: {
+      provider_providerUid: {
+        provider,
+        providerUid,
+      },
+    },
+    include: {
+      user: true,
+    },
+  });
+};
+
+export const createAuthProvider = async (
+  { userId, provider, providerUid },
+  tx = null,
+) => {
+  return db(tx).authProvider.create({
+    data: {
+      userId,
+      provider,
+      providerUid,
+    },
+  });
+};
+
+export const updateUserPhone = async (userId, phone, tx = null) => {
+  return db(tx).user.update({
+    where: {
+      id: userId,
+    },
+    data: {
+      phone,
+      phoneVerified: true,
+      verified: true,
+    },
+  });
+};
+
+export const createPhoneUserWithOnboarding = async (
+  { phone, providerUid },
+  tx = null,
+) => {
+  return db(tx).user.create({
+    data: {
+      phone,
+      phoneVerified: true,
+      verified: true,
+
+      authProviders: {
+        create: {
+          provider: "FIREBASE",
+          providerUid,
+        },
+      },
+
+      onboardingProgress: {
+        create: {
+          status: "NOT_STARTED",
+          currentStep: 1,
+          maxReachedStep: 1,
+          completedSections: [],
+          draftData: {},
+          draftVersion: 1,
+        },
+      },
+    },
+  });
+};

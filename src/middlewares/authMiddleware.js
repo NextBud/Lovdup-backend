@@ -1,4 +1,3 @@
-// authMiddleware.js
 import { verifyAccessToken } from "../lib/token.js";
 import { UnauthorizedException } from "../classes/errorClasses.js";
 import asyncWrapper from "../lib/asyncWrapper.js";

@@ -29,6 +29,27 @@ export const findPhoneById = async (userId, trx = null) => {
   });
 };
 
+export const findWhatsAppContactById = async (userId, tx = null) => {
+  return dbClient(tx).user.findUnique({
+    where: {
+      id: userId,
+    },
+    select: {
+      phone: true,
+      whatsappPhone: true,
+      profile: {
+        select: {
+          identity: {
+            select: {
+              firstName: true,
+            },
+          },
+        },
+      },
+    },
+  });
+};
+
 export const findUserById = async (userId, tx = null) => {
   const db = dbClient(tx);
 

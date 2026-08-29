@@ -6,13 +6,11 @@ import { findPhoneById } from "../../services/user/userDbService.js";
 import { getPrice } from "../../config/pricing.service.js";
 import { eventBus } from "../../events/eventBus.js";
 import { EVENT_TYPES } from "../../events/eventTypes.js";
-
 import {
   BadRequestError,
   ForbiddenError,
   NotFoundException,
 } from "../../classes/errorClasses.js";
-
 import {
   WalletTransactionReason,
   WalletReferenceType,
@@ -55,7 +53,6 @@ const MAX_STAGE = 4;
 // ---------------------------------------------------------------------------
 // Formatters
 // ---------------------------------------------------------------------------
-
 
 const buildPartnerInfo = (match, viewerId) => {
   const partner = match.userAId === viewerId ? match.userB : match.userA;
@@ -335,17 +332,11 @@ export const unlockStage = async (conversationId, userId, targetStage) => {
   }
 
   const role = assertParticipant(conversation, userId);
-
   assertSequentialUnlock(conversation, targetStage);
-
   assertNotAlreadyUnlocked(conversation, role, targetStage);
-
   await blockService.assertConversationNotBlocked(conversation);
-
   const meta = STAGE_META[targetStage];
-
   const price = getPrice(meta.priceKey);
-
   const result = await prisma.$transaction(
     async (trx) => {
       await walletService.debitCoins({
@@ -354,7 +345,6 @@ export const unlockStage = async (conversationId, userId, targetStage) => {
         reason: meta.reason,
         referenceType: WalletReferenceType.CONVERSATION,
         referenceId: conversationId,
-
         metadata: {
           conversationId,
           targetStage,
@@ -364,7 +354,6 @@ export const unlockStage = async (conversationId, userId, targetStage) => {
 
         db: trx,
       });
-
       await conversationDb.createUnlockRecord(
         {
           conversationId,
@@ -373,7 +362,6 @@ export const unlockStage = async (conversationId, userId, targetStage) => {
         },
         trx,
       );
-
       const unlockResult = await conversationDb.applyStageUnlock(
         {
           conversationId,
@@ -382,7 +370,6 @@ export const unlockStage = async (conversationId, userId, targetStage) => {
         },
         trx,
       );
-
       return {
         ...unlockResult,
         role,
@@ -394,30 +381,28 @@ export const unlockStage = async (conversationId, userId, targetStage) => {
     },
   );
 
-  eventBus.emit(EVENT_TYPES.STAGE_UNLOCK_REQUESTED, {
-    conversationId,
-    targetStage,
-    userId,
-    price: result.price,
-  });
+ eventBus.emit(EVENT_TYPES.STAGE_UNLOCK_PAID, {
+   conversationId,
+   targetStage,
+   userId,
+   price: result.price,
+ });
 
-  if (result.didAdvance) {
-    eventBus.emit(EVENT_TYPES.STAGE_UNLOCKED, {
-      conversationId,
-      stage: result.conversation.stage,
-      unlockedStage: result.unlockedStage,
-    });
-  }
+ if (result.didAdvance) {
+   eventBus.emit(EVENT_TYPES.STAGE_UNLOCKED, {
+     conversationId,
+     stage: result.conversation.stage,
+     unlockedStage: result.unlockedStage,
+     userAId: result.conversation.userAId,
+     userBId: result.conversation.userBId,
+   });
+ }
 
   return {
     stage: result.conversation.stage,
-
     didAdvance: result.didAdvance,
-
     unlockedStage: result.unlockedStage,
-
     myUnlocks: buildMyUnlocks(result.conversation, result.role),
-
     price: result.price,
   };
 };
@@ -505,9 +490,14 @@ export const sendMessage = async (
 
   const formatted = formatMessage(message);
 
+  const recipientId =
+    conversation.userAId === senderId
+      ? conversation.userBId
+      : conversation.userAId;
   eventBus.emit(EVENT_TYPES.MESSAGE_SENT, {
     conversationId,
     senderId,
+    recipientId,
     message: formatted,
   });
 
