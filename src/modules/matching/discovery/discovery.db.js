@@ -182,12 +182,27 @@ export const findDiscoveryCandidates = async ({
       profilePhotos: {
         where: {
           status: "ACTIVE",
+          moderationStatus: "APPROVED",
         },
 
         orderBy: {
           position: "asc",
         },
       },
+
+      // // ✅ ADDED: Voice answers for candidate
+      // voiceAnswers: {
+      //   where: {
+      //     status: "ACTIVE",
+      //     moderationStatus: "APPROVED",
+      //   },
+      //   include: {
+      //     voicePrompt: true,
+      //   },
+      //   orderBy: {
+      //     createdAt: "asc",
+      //   },
+      // },
     },
 
     orderBy: {
@@ -237,12 +252,27 @@ export const findViewerMatchResults = async ({
           profilePhotos: {
             where: {
               status: "ACTIVE",
+              moderationStatus: "APPROVED",
             },
 
             orderBy: {
               position: "asc",
             },
           },
+
+          // ✅ ADDED: Voice answers for candidate
+          // voiceAnswers: {
+          //   where: {
+          //     status: "ACTIVE",
+          //     moderationStatus: "APPROVED",
+          //   },
+          //   include: {
+          //     voicePrompt: true,
+          //   },
+          //   orderBy: {
+          //     createdAt: "asc",
+          //   },
+          // },
         },
       },
     },

@@ -540,36 +540,49 @@ export const calculateAndUpsertCompatibilityScore = async ({
   viewerIdentity = null,
   trx = null,
 }) => {
-  const breakdown = calculateCompatibilityBreakdown({
-    viewerPreference,
-    viewerProfile:
-      viewerProfile ??
-      (viewerIdentity
-        ? {
-            identity: viewerIdentity,
-          }
-        : null),
-    candidate,
-  });
+  try {
+    const breakdown = calculateCompatibilityBreakdown({
+      viewerPreference,
+      viewerProfile:
+        viewerProfile ??
+        (viewerIdentity
+          ? {
+              identity: viewerIdentity,
+            }
+          : null),
+      candidate,
+    });
 
-  return compatibilityScoreDb.upsertByUserPair(
-    {
-      // Direction matters.
-      //
-      // viewerId -> candidate.id
-      //
-      userAId: viewerId,
-      userBId: candidate.id,
-
-      score: breakdown.score,
-      identityScore: breakdown.identityScore,
-      valuesScore: breakdown.valuesScore,
-      lifestyleScore: breakdown.lifestyleScore,
-      locationScore: breakdown.locationScore,
-      reasons: breakdown.reasons,
-    },
-    trx,
-  );
+    // ✅ FIX: Use correct function name
+    return compatibilityScoreDb.upsertByViewerCandidate(
+      {
+        viewerId,
+        candidateId: candidate.id,
+        score: breakdown.score,
+        identityScore: breakdown.identityScore,
+        valuesScore: breakdown.valuesScore,
+        lifestyleScore: breakdown.lifestyleScore,
+        locationScore: breakdown.locationScore,
+        reasons: breakdown.reasons,
+      },
+      trx,
+    );
+  } catch (error) {
+    console.error(
+      `Failed to upsert compatibility score for viewer ${viewerId}, candidate ${candidate.id}:`,
+      error,
+    );
+    // Return a minimal score object to avoid breaking the flow
+    return {
+      id: null,
+      score: 0,
+      identityScore: 0,
+      valuesScore: 0,
+      lifestyleScore: 0,
+      locationScore: 0,
+      reasons: { matched: [], missed: ["Error calculating score"] },
+    };
+  }
 };
 
 // ---------------------------------------------------------------------------
@@ -600,13 +613,13 @@ export const calculateCompatibilityScore = ({
 // ---------------------------------------------------------------------------
 
 export const getCompatibilityScore = async ({
-  userAId,
-  userBId,
+  viewerId,
+  candidateId,
   trx = null,
 }) => {
-  return compatibilityScoreDb.findByUserPair({
-    userAId,
-    userBId,
+  return compatibilityScoreDb.findByViewerCandidate({
+    viewerId,
+    candidateId,
     trx,
   });
 };

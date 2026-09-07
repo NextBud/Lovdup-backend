@@ -18,6 +18,32 @@ export const findUserByEmail = async (email, tx = null) => {
   });
 };
 
+export const findNotificationRecipientById = async (userId, tx = null) => {
+  const db = dbClient(tx);
+
+  return db.user.findUnique({
+    where: {
+      id: userId,
+    },
+    select: {
+      id: true,
+      email: true,
+      phone: true,
+      whatsappPhone: true,
+
+      profile: {
+        select: {
+          identity: {
+            select: {
+              firstName: true,
+            },
+          },
+        },
+      },
+    },
+  });
+};  
+
 export const findPhoneById = async (userId, trx = null) => {
   return dbClient(trx).user.findUnique({
     where: {

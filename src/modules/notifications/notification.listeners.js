@@ -2,10 +2,14 @@ import { EVENT_TYPES } from "../../events/eventTypes.js";
 import { safeListener } from "../../events/helpers/registerListener.js";
 import * as userDb from "../../services/user/userDbService.js";
 import * as notificationService from "../../modules/notifications/notification.service.js";
-import * as whatsappService from "../../services/whatsapp/whatsapp.service.js";
+import { dispatchNotification } from "../../modules/notifications/notification.dispatcher.js";
 import { NOTIFICATION_TYPES } from "../../modules/notifications/notification.constants.js";
 
 let registered = false;
+
+// =============================================================================
+// Notification Event Listeners
+// =============================================================================
 
 export const registerNotificationListeners = () => {
   if (registered) {
@@ -14,9 +18,9 @@ export const registerNotificationListeners = () => {
 
   registered = true;
 
-  // ---------------------------------------------------------------------------
-  // Connection request accepted
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
+  // MATCH REQUEST ACCEPTED
+  // ===========================================================================
 
   safeListener(
     EVENT_TYPES.MATCH_REQUEST_ACCEPTED,
@@ -37,9 +41,9 @@ export const registerNotificationListeners = () => {
     },
   );
 
-  // ---------------------------------------------------------------------------
-  // Match request received
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
+  // MATCH REQUEST SENT
+  // ===========================================================================
 
   safeListener(
     EVENT_TYPES.MATCH_REQUEST_SENT,
@@ -60,21 +64,27 @@ export const registerNotificationListeners = () => {
     },
   );
 
-  // ---------------------------------------------------------------------------
-  // New match
+  // ===========================================================================
+  // MATCH CREATED
   //
   // Fired after the match transaction has successfully committed.
   //
-  // Responsibilities:
-  //   1. Create in-app notification for User A
-  //   2. Create in-app notification for User B
-  //   3. Send WhatsApp notification to User A
-  //   4. Send WhatsApp notification to User B
-  // ---------------------------------------------------------------------------
+  // Channels:
+  //   - In-app
+  //   - Email
+  //   - WhatsApp
+  //
+  // Each participant receives their own notification with the other
+  // participant as the actor.
+  // ===========================================================================
 
   safeListener(
     EVENT_TYPES.MATCH_CREATED,
     async ({ matchId, userAId, userBId }) => {
+      // -----------------------------------------------------------------------
+      // Validate event payload
+      // -----------------------------------------------------------------------
+
       if (!matchId || !userAId || !userBId) {
         console.warn("[MATCH_CREATED] Invalid event payload", {
           matchId,
@@ -85,11 +95,13 @@ export const registerNotificationListeners = () => {
         return;
       }
 
-      // Fetch both users once. The same data is used for both the in-app
-      // notification context and WhatsApp notification.
+      // -----------------------------------------------------------------------
+      // Load notification recipients
+      // -----------------------------------------------------------------------
+
       const [userA, userB] = await Promise.all([
-        userDb.findWhatsAppContactById(userAId),
-        userDb.findWhatsAppContactById(userBId),
+        userDb.findNotificationRecipientById(userAId),
+        userDb.findNotificationRecipientById(userBId),
       ]);
 
       if (!userA || !userB) {
@@ -97,105 +109,83 @@ export const registerNotificationListeners = () => {
           matchId,
           userAId,
           userBId,
-          userAFound: !!userA,
-          userBFound: !!userB,
+          userAFound: Boolean(userA),
+          userBFound: Boolean(userB),
         });
+
+        return;
       }
 
+      // -----------------------------------------------------------------------
+      // Resolve display names
+      // -----------------------------------------------------------------------
+
       const userAName =
-        userA?.profile?.identity?.firstName?.trim() || "Someone";
+        userA.profile?.identity?.firstName?.trim() || "Someone";
 
       const userBName =
-        userB?.profile?.identity?.firstName?.trim() || "Someone";
+        userB.profile?.identity?.firstName?.trim() || "Someone";
+
+      // -----------------------------------------------------------------------
+      // Dispatch notifications
+      //
+      // User A receives User B's identity as the matched user.
+      // User B receives User A's identity as the matched user.
+      // -----------------------------------------------------------------------
 
       const results = await Promise.allSettled([
-        // ---------------------------------------------------------------------
-        // In-app notification → User A
-        // ---------------------------------------------------------------------
-
-        notificationService.createNotification({
+        dispatchNotification({
           recipientId: userAId,
+          recipient: userA,
           actorId: userBId,
           type: NOTIFICATION_TYPES.NEW_MATCH,
           entityId: matchId,
+          metadata: {
+            matchedUserName: userBName,
+          },
         }),
 
-        // ---------------------------------------------------------------------
-        // In-app notification → User B
-        // ---------------------------------------------------------------------
-
-        notificationService.createNotification({
+        dispatchNotification({
           recipientId: userBId,
+          recipient: userB,
           actorId: userAId,
           type: NOTIFICATION_TYPES.NEW_MATCH,
           entityId: matchId,
-        }),
-
-        // ---------------------------------------------------------------------
-        // WhatsApp → User A
-        // ---------------------------------------------------------------------
-
-        whatsappService.sendMatchWhatsApp({
-          phone: userA?.whatsappPhone || userA?.phone,
-          matchedUserName: userBName,
-          matchId,
-          recipientId: userAId,
-        }),
-
-        // ---------------------------------------------------------------------
-        // WhatsApp → User B
-        // ---------------------------------------------------------------------
-
-        whatsappService.sendMatchWhatsApp({
-          phone: userB?.whatsappPhone || userB?.phone,
-          matchedUserName: userAName,
-          matchId,
-          recipientId: userBId,
+          metadata: {
+            matchedUserName: userAName,
+          },
         }),
       ]);
 
       // -----------------------------------------------------------------------
-      // Notification result logging
+      // Log delivery results
       // -----------------------------------------------------------------------
 
-      const labels = [
-        "IN_APP_USER_A",
-        "IN_APP_USER_B",
-        "WHATSAPP_USER_A",
-        "WHATSAPP_USER_B",
-      ];
-
       results.forEach((result, index) => {
-        const label = labels[index];
+        const recipientId = index === 0 ? userAId : userBId;
 
         if (result.status === "fulfilled") {
-          const value = result.value;
-
-          if (value?.sent === false) {
-            console.warn(`[MATCH_CREATED] ${label} skipped`, {
-              matchId,
-              userAId,
-              userBId,
-              reason: value.reason,
-            });
-          }
+          console.log("[MATCH_CREATED] Notification dispatched", {
+            matchId,
+            recipientId,
+            deliveries: result.value?.deliveries,
+          });
 
           return;
         }
 
-        console.error(`[MATCH_CREATED] ${label} failed`, {
+        console.error("[MATCH_CREATED] Notification dispatch failed", {
           matchId,
-          userAId,
-          userBId,
+          recipientId,
           error: result.reason,
         });
       });
     },
   );
 
-  // ---------------------------------------------------------------------------
-  // New message
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
+  // MESSAGE SENT
+  // ===========================================================================
 
   safeListener(
     EVENT_TYPES.MESSAGE_SENT,
@@ -217,13 +207,19 @@ export const registerNotificationListeners = () => {
     },
   );
 
-  // ---------------------------------------------------------------------------
-  // Conversation stage unlocked
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
+  // STAGE UNLOCKED
+  // ===========================================================================
 
   safeListener(
     EVENT_TYPES.STAGE_UNLOCKED,
-    async ({ conversationId, stage, unlockedStage, userAId, userBId }) => {
+    async ({
+      conversationId,
+      stage,
+      unlockedStage,
+      userAId,
+      userBId,
+    }) => {
       const stageNumber = unlockedStage ?? stage;
 
       if (!userAId || !userBId || !stageNumber) {
@@ -254,9 +250,9 @@ export const registerNotificationListeners = () => {
     },
   );
 
-  // ---------------------------------------------------------------------------
-  // Coins awarded
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
+  // COINS AWARDED
+  // ===========================================================================
 
   safeListener(
     EVENT_TYPES.COINS_AWARDED,
@@ -277,9 +273,9 @@ export const registerNotificationListeners = () => {
     },
   );
 
-  // ---------------------------------------------------------------------------
-  // Coin purchase completed
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
+  // COIN PURCHASE COMPLETED
+  // ===========================================================================
 
   safeListener(
     EVENT_TYPES.COIN_PURCHASE_COMPLETED,
@@ -300,3 +296,4 @@ export const registerNotificationListeners = () => {
     },
   );
 };
+

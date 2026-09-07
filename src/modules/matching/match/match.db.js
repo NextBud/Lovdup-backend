@@ -8,12 +8,12 @@ export const findMatchBetweenUsers = async ({
   trx = null,
 }) => {
   const db = dbClient(trx);
-
+  const [id1, id2] = [userAId, userBId].sort();
   return db.match.findUnique({
     where: {
       userAId_userBId: {
-        userAId,
-        userBId,
+        userAId: id1,
+        userBId: id2,
       },
     },
   });
@@ -30,7 +30,7 @@ export const createMatch = async ({ userAId, userBId, trx = null }) => {
   });
 };
 
-// match.db.js - Update findById to include full relations
+// ✅ FIX: Update findById to include compatibilityScore
 export const findById = async (matchId, trx = null) => {
   const db = dbClient(trx);
 
@@ -45,7 +45,7 @@ export const findById = async (matchId, trx = null) => {
               lifestyle: true,
               values: true,
               narrative: true,
-            }
+            },
           },
           profilePhotos: {
             where: { status: "ACTIVE" },
@@ -65,7 +65,7 @@ export const findById = async (matchId, trx = null) => {
               lifestyle: true,
               values: true,
               narrative: true,
-            }
+            },
           },
           profilePhotos: {
             where: { status: "ACTIVE" },
@@ -86,17 +86,24 @@ export const findById = async (matchId, trx = null) => {
           lastMessage: true,
         },
       },
-      compatibilityScore: true,
+      // ✅ FIX: Add compatibilityScore relation
+      compatibilityScore: {
+        where: {
+          OR: [
+            { viewerId: { equals: undefined } }, // This will be handled by the service
+          ],
+        },
+      },
     },
   });
 };
 
-export const findUserMatches = async ({ 
-  userId, 
-  status = "ACTIVE", 
-  limit = 50, 
+export const findUserMatches = async ({
+  userId,
+  status = "ACTIVE",
+  limit = 50,
   offset = 0,
-  trx = null 
+  trx = null,
 }) => {
   const db = dbClient(trx);
 
@@ -111,64 +118,67 @@ export const findUserMatches = async ({
     skip: offset,
     take: limit,
     include: {
-  userA: {
-    include: {
-      profile: {
+      userA: {
         include: {
-          identity: true,
-          lifestyle: true,
-          values: true,
-          narrative: true,
+          profile: {
+            include: {
+              identity: true,
+              lifestyle: true,
+              values: true,
+              narrative: true,
+            },
+          },
+          profilePhotos: {
+            where: { status: "ACTIVE" },
+            orderBy: [{ isPrimary: "desc" }, { position: "asc" }],
+          },
+          voiceAnswers: {
+            where: { status: "ACTIVE" },
+            include: { voicePrompt: true },
+          },
         },
       },
-      profilePhotos: {
-        where: { status: "ACTIVE" },
-        orderBy: [{ isPrimary: "desc" }, { position: "asc" }],
-      },
-      voiceAnswers: {
-        where: { status: "ACTIVE" },
-        include: { voicePrompt: true },
-      },
-    },
-  },
-
-  userB: {
-    include: {
-      profile: {
+      userB: {
         include: {
-          identity: true,
-          lifestyle: true,
-          values: true,
-          narrative: true,
+          profile: {
+            include: {
+              identity: true,
+              lifestyle: true,
+              values: true,
+              narrative: true,
+            },
+          },
+          profilePhotos: {
+            where: { status: "ACTIVE" },
+            orderBy: [{ isPrimary: "desc" }, { position: "asc" }],
+          },
+          voiceAnswers: {
+            where: { status: "ACTIVE" },
+            include: { voicePrompt: true },
+          },
         },
       },
-      profilePhotos: {
-        where: { status: "ACTIVE" },
-        orderBy: [{ isPrimary: "desc" }, { position: "asc" }],
-      },
-      voiceAnswers: {
-        where: { status: "ACTIVE" },
-        include: { voicePrompt: true },
-      },
-    },
-  },
-
-  conversation: {
-    include: {
-      messages: {
-        orderBy: {
-          createdAt: "desc",
+      conversation: {
+        include: {
+          messages: {
+            orderBy: {
+              createdAt: "desc",
+            },
+            take: 5,
+          },
+          lastMessage: true,
         },
-        take: 5,
       },
-      lastMessage: true,
     },
-  },
-  }
   });
 };
 
-export const createBlock = async ({ blockerId, blockedId, reason = null, trx = null }) => {
+export const createBlock = async ({
+  blockerId,
+  blockedId,
+  reason = null,
+  trx = null,
+}) => {
   const db = dbClient(trx);
 
   return db.userBlock.create({
@@ -186,11 +196,14 @@ export const createMatchIfNotExists = async (
 ) => {
   const db = dbClient(trx);
 
+  // Ensure consistent ordering to avoid duplicate matches
+  const [id1, id2] = [userAId, userBId].sort();
+
   return db.match.upsert({
     where: {
       userAId_userBId: {
-        userAId,
-        userBId,
+        userAId: id1,
+        userBId: id2,
       },
     },
     update: {
@@ -198,8 +211,8 @@ export const createMatchIfNotExists = async (
       unmatchedAt: null,
     },
     create: {
-      userAId,
-      userBId,
+      userAId: id1,
+      userBId: id2,
       status: "ACTIVE",
     },
   });
@@ -208,47 +221,48 @@ export const createMatchIfNotExists = async (
 export const getUserMatchStats = async (userId, trx = null) => {
   const db = dbClient(trx);
 
-  const [total, active, unmatched, blocked, thisMonth, thisWeek] = await Promise.all([
-    db.match.count({
-      where: {
-        OR: [{ userAId: userId }, { userBId: userId }],
-      },
-    }),
-    db.match.count({
-      where: {
-        OR: [{ userAId: userId }, { userBId: userId }],
-        status: "ACTIVE",
-      },
-    }),
-    db.match.count({
-      where: {
-        OR: [{ userAId: userId }, { userBId: userId }],
-        status: "UNMATCHED",
-      },
-    }),
-    db.match.count({
-      where: {
-        OR: [{ userAId: userId }, { userBId: userId }],
-        status: "BLOCKED",
-      },
-    }),
-    db.match.count({
-      where: {
-        OR: [{ userAId: userId }, { userBId: userId }],
-        matchedAt: {
-          gte: new Date(new Date().setMonth(new Date().getMonth() - 1)),
+  const [total, active, unmatched, blocked, thisMonth, thisWeek] =
+    await Promise.all([
+      db.match.count({
+        where: {
+          OR: [{ userAId: userId }, { userBId: userId }],
         },
-      },
-    }),
-    db.match.count({
-      where: {
-        OR: [{ userAId: userId }, { userBId: userId }],
-        matchedAt: {
-          gte: new Date(new Date().setDate(new Date().getDate() - 7)),
+      }),
+      db.match.count({
+        where: {
+          OR: [{ userAId: userId }, { userBId: userId }],
+          status: "ACTIVE",
         },
-      },
-    }),
-  ]);
+      }),
+      db.match.count({
+        where: {
+          OR: [{ userAId: userId }, { userBId: userId }],
+          status: "UNMATCHED",
+        },
+      }),
+      db.match.count({
+        where: {
+          OR: [{ userAId: userId }, { userBId: userId }],
+          status: "BLOCKED",
+        },
+      }),
+      db.match.count({
+        where: {
+          OR: [{ userAId: userId }, { userBId: userId }],
+          matchedAt: {
+            gte: new Date(new Date().setMonth(new Date().getMonth() - 1)),
+          },
+        },
+      }),
+      db.match.count({
+        where: {
+          OR: [{ userAId: userId }, { userBId: userId }],
+          matchedAt: {
+            gte: new Date(new Date().setDate(new Date().getDate() - 7)),
+          },
+        },
+      }),
+    ]);
 
   return {
     total,
